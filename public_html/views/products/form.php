@@ -4,7 +4,7 @@
 declare(strict_types=1);
 
 $value = static fn (string $field, string $default = ''): string =>
-    e($product[$field] ?? $default);
+e($product[$field] ?? $default);
 ?>
 <div class="page-heading">
     <div>
@@ -15,6 +15,13 @@ $value = static fn (string $field, string $default = ''): string =>
 
 <form class="card form-grid" method="post" action="<?= e($action) ?>">
     <?= csrf_field() ?>
+    <input type="hidden" name="return_to" value="<?= e($returnTo ?? '') ?>">
+
+    <?php if (!empty($product['image_path'])): ?>
+        <div class="full-width image-preview">
+            <img src="<?= e($product['image_path']) ?>" alt="">
+        </div>
+    <?php endif; ?>
 
     <label>
         Product name
@@ -30,6 +37,13 @@ $value = static fn (string $field, string $default = ''): string =>
         Source URL
         <input type="url" name="source_url" value="<?= $value('source_url') ?>">
     </label>
+
+    <?php if ($product): ?>
+        <label class="checkbox-label full-width">
+            <input type="checkbox" name="refresh_image" value="1">
+            Download the source image again
+        </label>
+    <?php endif; ?>
 
     <label>
         Package amount
@@ -50,7 +64,7 @@ $value = static fn (string $field, string $default = ''): string =>
 
     <label class="full-width">
         Package description
-        <input name="package_description" value="<?= $value('package_description') ?>" maxlength="100" placeholder="For example: 200 g or 6 x 125 g">
+        <input name="package_description" value="<?= $value('package_description') ?>" maxlength="100">
     </label>
 
     <label>
@@ -71,15 +85,15 @@ $value = static fn (string $field, string $default = ''): string =>
 
     <?php
     $fields = [
-        'energy_kj' => 'Energy (kJ)',
-        'energy_kcal' => 'Energy (kcal)',
-        'fat_g' => 'Fat (g)',
-        'saturated_fat_g' => 'Saturated fat (g)',
-        'carbohydrates_g' => 'Carbohydrates (g)',
-        'sugars_g' => 'Sugars (g)',
-        'fiber_g' => 'Fiber (g)',
-        'protein_g' => 'Protein (g)',
-        'salt_g' => 'Salt (g)',
+            'energy_kj' => 'Energy (kJ)',
+            'energy_kcal' => 'Energy (kcal)',
+            'fat_g' => 'Fat (g)',
+            'saturated_fat_g' => 'Saturated fat (g)',
+            'carbohydrates_g' => 'Carbohydrates (g)',
+            'sugars_g' => 'Sugars (g)',
+            'fiber_g' => 'Fiber (g)',
+            'protein_g' => 'Protein (g)',
+            'salt_g' => 'Salt (g)',
     ];
     ?>
     <?php foreach ($fields as $field => $label): ?>
@@ -91,6 +105,6 @@ $value = static fn (string $field, string $default = ''): string =>
 
     <div class="full-width actions">
         <button class="button" type="submit">Save product</button>
-        <a class="button button-secondary" href="/products">Cancel</a>
+        <a class="button button-secondary" href="<?= e(($returnTo ?? '') ?: '/products') ?>">Cancel</a>
     </div>
 </form>

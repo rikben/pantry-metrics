@@ -12,19 +12,18 @@ final class RecipeRepository
     public function allForUser(int $userId, bool $archived = false): array
     {
         $statement = Database::connection()->prepare(
-            'SELECT r.*,
-                COUNT(ri.id) AS ingredient_count,
+            'SELECT r.*, COUNT(ri.id) AS ingredient_count,
                 COALESCE(SUM((ri.amount / p.reference_amount) * p.energy_kcal), 0) AS total_kcal
              FROM recipes r
              LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id
              LEFT JOIN products p ON p.id = ri.product_id
-             WHERE r.owner_user_id = :user_id AND r.is_archived = :is_archived
+             WHERE r.owner_user_id = :user_id AND r.is_archived = :archived
              GROUP BY r.id
              ORDER BY r.updated_at DESC'
         );
         $statement->execute([
             'user_id' => $userId,
-            'is_archived' => $archived ? 1 : 0,
+            'archived' => $archived ? 1 : 0,
         ]);
 
         return $statement->fetchAll();
@@ -51,10 +50,8 @@ final class RecipeRepository
     {
         $statement = Database::connection()->prepare(
             'UPDATE recipes SET
-                name = :name,
-                description = :description,
-                source_url = :source_url,
-                servings = :servings
+                name = :name, description = :description,
+                source_url = :source_url, servings = :servings
              WHERE id = :id AND owner_user_id = :owner_user_id'
         );
         $statement->execute([
@@ -67,17 +64,35 @@ final class RecipeRepository
         ]);
     }
 
-    public function setArchived(int $recipeId, int $userId, bool $archived): void
+    public function setImage(int $recipeId, int $userId, ?array $image): void
     {
+        if ($image === null) {
+            return;
+        }
+
         $statement = Database::connection()->prepare(
             'UPDATE recipes
-             SET is_archived = :is_archived
+             SET image_path = :image_path, image_source_url = :image_source_url
              WHERE id = :id AND owner_user_id = :owner_user_id'
         );
         $statement->execute([
             'id' => $recipeId,
             'owner_user_id' => $userId,
-            'is_archived' => $archived ? 1 : 0,
+            'image_path' => $image['path'],
+            'image_source_url' => $image['source_url'],
+        ]);
+    }
+
+    public function setArchived(int $recipeId, int $userId, bool $archived): void
+    {
+        $statement = Database::connection()->prepare(
+            'UPDATE recipes SET is_archived = :value
+             WHERE id = :id AND owner_user_id = :owner_user_id'
+        );
+        $statement->execute([
+            'id' => $recipeId,
+            'owner_user_id' => $userId,
+            'value' => $archived ? 1 : 0,
         ]);
     }
 
@@ -88,14 +103,13 @@ final class RecipeRepository
         );
         $statement->execute(['id' => $recipeId, 'user_id' => $userId]);
 
-        $recipe = $statement->fetch();
-        return $recipe ?: null;
+        return $statement->fetch() ?: null;
     }
 
     public function ingredients(int $recipeId): array
     {
         $statement = Database::connection()->prepare(
-            'SELECT ri.*, p.name AS product_name, p.brand,
+            'SELECT ri.*, p.name AS product_name, p.brand, p.image_path,
                 p.source_identifier, p.package_amount, p.package_unit, p.package_description,
                 p.reference_amount, p.reference_unit,
                 p.energy_kj, p.energy_kcal, p.fat_g, p.saturated_fat_g,
@@ -110,7 +124,7 @@ final class RecipeRepository
         return $statement->fetchAll();
     }
 
-    public function addIngredient(int $recipeId, array $data): void
+    public function addIngredient(int $recipeId, array $data): int
     {
         $statement = Database::connection()->prepare(
             'INSERT INTO recipe_ingredients (
@@ -128,5 +142,75 @@ final class RecipeRepository
             'unit' => $data['unit'],
             'notes' => $data['notes'] ?: null,
         ]);
+
+        return (int) Database::connection()->lastInsertId();
+    }
+
+    public function updateIngredient(
+        int $recipeId,
+        int $ingredientId,
+        int $userId,
+        array $data
+    ): bool {
+        $statement = Database::connection()->prepare(
+            'UPDATE recipe_ingredients ri
+             INNER JOIN recipes r ON r.id = ri.recipe_id
+             SET ri.amount = :amount, ri.unit = :unit, ri.notes = :notes
+             WHERE ri.id = :ingredient_id
+               AND ri.recipe_id = :recipe_id
+               AND r.owner_user_id = :user_id'
+        );
+        $statement->execute([
+            'ingredient_id' => $ingredientId,
+            'recipe_id' => $recipeId,
+            'user_id' => $userId,
+            'amount' => $data['amount'],
+            'unit' => $data['unit'],
+            'notes' => $data['notes'] ?: null,
+        ]);
+
+        if ($statement->rowCount() > 0) {
+            return true;
+        }
+
+        /*
+         * MySQL reports zero affected rows when the submitted values are
+         * identical to the stored values. Confirm ownership/existence before
+         * treating that as a missing ingredient.
+         */
+        $existsStatement = Database::connection()->prepare(
+            'SELECT 1
+             FROM recipe_ingredients ri
+             INNER JOIN recipes r ON r.id = ri.recipe_id
+             WHERE ri.id = :ingredient_id
+               AND ri.recipe_id = :recipe_id
+               AND r.owner_user_id = :user_id
+             LIMIT 1'
+        );
+        $existsStatement->execute([
+            'ingredient_id' => $ingredientId,
+            'recipe_id' => $recipeId,
+            'user_id' => $userId,
+        ]);
+
+        return (bool) $existsStatement->fetchColumn();
+    }
+
+    public function deleteIngredient(int $recipeId, int $ingredientId, int $userId): bool
+    {
+        $statement = Database::connection()->prepare(
+            'DELETE ri FROM recipe_ingredients ri
+             INNER JOIN recipes r ON r.id = ri.recipe_id
+             WHERE ri.id = :ingredient_id
+               AND ri.recipe_id = :recipe_id
+               AND r.owner_user_id = :user_id'
+        );
+        $statement->execute([
+            'ingredient_id' => $ingredientId,
+            'recipe_id' => $recipeId,
+            'user_id' => $userId,
+        ]);
+
+        return $statement->rowCount() > 0;
     }
 }

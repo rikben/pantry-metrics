@@ -11,6 +11,7 @@ use App\Repositories\ProductRepository;
 use App\Services\ProductImport\AhProductImporter;
 use App\Services\ProductImport\ImportedProduct;
 use App\Services\ProductImport\ImportException;
+use App\Services\RemoteImageService;
 
 final class ProductImportController
 {
@@ -50,17 +51,16 @@ final class ProductImportController
         ];
 
         $user = Container::instance()->get(AuthServiceInterface::class)->user();
-        $existing = (new ProductRepository())->findBySource(
-            (int) $user['id'],
-            'ah',
-            $product->sourceIdentifier
-        );
 
         view('products/import/preview', [
             'title' => 'Review AH product',
             'product' => $product,
             'previewToken' => $token,
-            'existing' => $existing,
+            'existing' => (new ProductRepository())->findBySource(
+                (int) $user['id'],
+                'ah',
+                $product->sourceIdentifier
+            ),
         ]);
     }
 
@@ -72,7 +72,7 @@ final class ProductImportController
 
         if (!is_array($preview) || (int) ($preview['created_at'] ?? 0) < time() - 1800) {
             http_response_code(422);
-            exit('The import preview has expired. Please import the product again.');
+            exit('The import preview has expired.');
         }
 
         $product = ImportedProduct::fromArray((array) $preview['product']);
@@ -86,22 +86,27 @@ final class ProductImportController
         $data['package_unit'] = trim((string) ($_POST['package_unit'] ?? $data['package_unit'] ?? ''));
 
         foreach ([
-            'energy_kj', 'energy_kcal', 'fat_g', 'saturated_fat_g',
-            'carbohydrates_g', 'sugars_g', 'fiber_g', 'protein_g', 'salt_g',
-        ] as $field) {
+                     'energy_kj', 'energy_kcal', 'fat_g', 'saturated_fat_g',
+                     'carbohydrates_g', 'sugars_g', 'fiber_g', 'protein_g', 'salt_g',
+                 ] as $field) {
             $data[$field] = max((float) ($_POST[$field] ?? $data[$field]), 0);
         }
 
-        if ($data['name'] === '') {
-            http_response_code(422);
-            exit('Product name is required.');
-        }
-
         $user = Container::instance()->get(AuthServiceInterface::class)->user();
-        (new ProductRepository())->upsertImported((int) $user['id'], $data);
+        $repository = new ProductRepository();
+        $productId = $repository->upsertImported((int) $user['id'], $data);
+
+        $repository->setImage(
+            $productId,
+            (int) $user['id'],
+            (new RemoteImageService())->importFromPage($data['source_url'], 'products')
+        );
 
         $returnTo = $this->safeReturnTo((string) ($preview['return_to'] ?? ''));
-        redirect($returnTo !== '' ? $returnTo : '/products');
+        redirect($returnTo !== ''
+            ? $returnTo . '?selected_product=' . $productId . '#add-ingredient'
+            : '/products?imported=' . $productId
+        );
     }
 
     private function safeReturnTo(string $path): string

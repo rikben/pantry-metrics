@@ -8,6 +8,7 @@ namespace App\Controllers;
 use App\Auth\AuthServiceInterface;
 use App\Core\Container;
 use App\Repositories\ProductRepository;
+use App\Services\RemoteImageService;
 
 final class ProductController
 {
@@ -29,18 +30,30 @@ final class ProductController
             'title' => 'Add product',
             'product' => null,
             'action' => '/products',
+            'returnTo' => $this->safeReturnTo((string) ($_GET['return_to'] ?? '')),
         ]);
     }
 
     public function store(): void
     {
         $user = Container::instance()->get(AuthServiceInterface::class)->user();
-        $productId = (new ProductRepository())->create(
-            (int) $user['id'],
-            $this->validatedData()
-        );
+        $data = $this->validatedData();
+        $repository = new ProductRepository();
+        $productId = $repository->create((int) $user['id'], $data);
 
-        redirect('/products?created=' . $productId);
+        if ($data['source_url'] !== '') {
+            $repository->setImage(
+                $productId,
+                (int) $user['id'],
+                (new RemoteImageService())->importFromPage($data['source_url'], 'products')
+            );
+        }
+
+        $returnTo = $this->safeReturnTo((string) ($_POST['return_to'] ?? ''));
+        redirect($returnTo !== ''
+            ? $returnTo . '?selected_product=' . $productId . '#add-ingredient'
+            : '/products?created=' . $productId
+        );
     }
 
     public function edit(string $id): void
@@ -58,13 +71,25 @@ final class ProductController
             'title' => 'Edit product',
             'product' => $product,
             'action' => "/products/{$id}/update",
+            'returnTo' => '',
         ]);
     }
 
     public function update(string $id): void
     {
         $user = Container::instance()->get(AuthServiceInterface::class)->user();
-        (new ProductRepository())->update((int) $id, (int) $user['id'], $this->validatedData());
+        $data = $this->validatedData();
+        $repository = new ProductRepository();
+        $repository->update((int) $id, (int) $user['id'], $data);
+
+        if ($data['source_url'] !== '' && isset($_POST['refresh_image'])) {
+            $repository->setImage(
+                (int) $id,
+                (int) $user['id'],
+                (new RemoteImageService())->importFromPage($data['source_url'], 'products')
+            );
+        }
+
         redirect('/products');
     }
 
@@ -98,9 +123,9 @@ final class ProductController
         ];
 
         foreach ([
-            'energy_kj', 'energy_kcal', 'fat_g', 'saturated_fat_g',
-            'carbohydrates_g', 'sugars_g', 'fiber_g', 'protein_g', 'salt_g',
-        ] as $field) {
+                     'energy_kj', 'energy_kcal', 'fat_g', 'saturated_fat_g',
+                     'carbohydrates_g', 'sugars_g', 'fiber_g', 'protein_g', 'salt_g',
+                 ] as $field) {
             $data[$field] = max((float) ($_POST[$field] ?? 0), 0);
         }
 
@@ -114,5 +139,10 @@ final class ProductController
         }
 
         return $data;
+    }
+
+    private function safeReturnTo(string $path): string
+    {
+        return preg_match('#^/recipes/\d+$#', $path) === 1 ? $path : '';
     }
 }

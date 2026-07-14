@@ -10,7 +10,7 @@ use App\Controllers\RecipeController;
 use App\Core\Router;
 use App\Middleware\SecurityHeadersMiddleware;
 
-$app = require __DIR__ . '/app/bootstrap.php';
+require __DIR__ . '/app/bootstrap.php';
 
 SecurityHeadersMiddleware::handle();
 
@@ -38,7 +38,10 @@ $router->get('/recipes/{id}/edit', [RecipeController::class, 'edit']);
 $router->post('/recipes/{id}/update', [RecipeController::class, 'update']);
 $router->post('/recipes/{id}/archive', [RecipeController::class, 'archive']);
 $router->post('/recipes/{id}/restore', [RecipeController::class, 'restore']);
+
 $router->post('/recipes/{id}/ingredients', [RecipeController::class, 'addIngredient']);
+$router->post('/recipes/{id}/ingredients/{ingredientId}/update', [RecipeController::class, 'updateIngredient']);
+$router->post('/recipes/{id}/ingredients/{ingredientId}/delete', [RecipeController::class, 'deleteIngredient']);
 
 $router->dispatch(
     $_SERVER['REQUEST_METHOD'] ?? 'GET',

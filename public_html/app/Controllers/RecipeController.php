@@ -10,12 +10,13 @@ use App\Core\Container;
 use App\Repositories\ProductRepository;
 use App\Repositories\RecipeRepository;
 use App\Services\NutritionCalculator;
+use App\Services\RemoteImageService;
 
 final class RecipeController
 {
     public function index(): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $user = $this->user();
         $archived = ($_GET['archived'] ?? '') === '1';
 
         view('recipes/index', [
@@ -36,19 +37,29 @@ final class RecipeController
 
     public function store(): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
-        $recipeId = (new RecipeRepository())->create((int) $user['id'], $this->validatedData());
+        $user = $this->user();
+        $data = $this->validatedRecipeData();
+        $repository = new RecipeRepository();
+        $recipeId = $repository->create((int) $user['id'], $data);
+
+        if ($data['source_url'] !== '') {
+            $repository->setImage(
+                $recipeId,
+                (int) $user['id'],
+                (new RemoteImageService())->importFromPage($data['source_url'], 'recipes')
+            );
+        }
+
         redirect("/recipes/{$recipeId}");
     }
 
     public function edit(string $id): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $user = $this->user();
         $recipe = (new RecipeRepository())->findForUser((int) $id, (int) $user['id']);
 
         if (!$recipe) {
-            http_response_code(404);
-            view('errors/404', ['title' => 'Recipe not found']);
+            $this->notFound();
             return;
         }
 
@@ -61,86 +72,139 @@ final class RecipeController
 
     public function update(string $id): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
-        (new RecipeRepository())->update((int) $id, (int) $user['id'], $this->validatedData());
+        $user = $this->user();
+        $data = $this->validatedRecipeData();
+        $repository = new RecipeRepository();
+        $repository->update((int) $id, (int) $user['id'], $data);
+
+        if ($data['source_url'] !== '' && isset($_POST['refresh_image'])) {
+            $repository->setImage(
+                (int) $id,
+                (int) $user['id'],
+                (new RemoteImageService())->importFromPage($data['source_url'], 'recipes')
+            );
+        }
+
         redirect("/recipes/{$id}");
     }
 
     public function archive(string $id): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $user = $this->user();
         (new RecipeRepository())->setArchived((int) $id, (int) $user['id'], true);
         redirect('/recipes');
     }
 
     public function restore(string $id): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $user = $this->user();
         (new RecipeRepository())->setArchived((int) $id, (int) $user['id'], false);
         redirect('/recipes?archived=1');
     }
 
     public function show(string $id): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $user = $this->user();
         $repository = new RecipeRepository();
         $recipe = $repository->findForUser((int) $id, (int) $user['id']);
 
         if (!$recipe) {
-            http_response_code(404);
-            view('errors/404', ['title' => 'Recipe not found']);
+            $this->notFound();
             return;
         }
 
-        $ingredients = $repository->ingredients((int) $id);
-        $nutrition = (new NutritionCalculator())->calculate($ingredients, (float) $recipe['servings']);
+        $payload = $this->recipePayload($repository, $recipe);
 
         view('recipes/show', [
             'title' => $recipe['name'],
             'recipe' => $recipe,
-            'nutrition' => $nutrition,
+            'nutrition' => $payload['nutrition'],
             'products' => (new ProductRepository())->allForUser((int) $user['id']),
+            'selectedProductId' => (int) ($_GET['selected_product'] ?? 0),
         ]);
     }
 
     public function addIngredient(string $id): void
     {
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $user = $this->user();
         $repository = new RecipeRepository();
         $recipe = $repository->findForUser((int) $id, (int) $user['id']);
 
         if (!$recipe) {
-            http_response_code(404);
-            exit('Recipe not found.');
+            $this->jsonOrExit(['error' => 'Recipe not found.'], 404);
         }
 
-        $data = [
-            'product_id' => (int) ($_POST['product_id'] ?? 0),
-            'position' => max((int) ($_POST['position'] ?? 0), 0),
-            'original_description' => trim((string) ($_POST['original_description'] ?? '')),
-            'amount' => max((float) ($_POST['amount'] ?? 0), 0.001),
-            'unit' => in_array($_POST['unit'] ?? '', ['g', 'ml', 'serving'], true)
-                ? $_POST['unit']
-                : 'g',
-            'notes' => trim((string) ($_POST['notes'] ?? '')),
-        ];
-
-        if ($data['product_id'] < 1) {
-            http_response_code(422);
-            exit('Please select a product.');
-        }
-
+        $data = $this->validatedIngredientData(true);
         $repository->addIngredient((int) $id, $data);
 
-        $redirectTo = (string) ($_POST['redirect_to'] ?? '');
-        if (in_array($redirectTo, ['/products/create', '/products/import'], true)) {
-            redirect($redirectTo . '?return_to=' . rawurlencode("/recipes/{$id}"));
+        if ($this->wantsJson()) {
+            $this->json($this->recipePayload($repository, $recipe));
         }
 
-        redirect("/recipes/{$id}");
+        redirect("/recipes/{$id}#add-ingredient");
     }
 
-    private function validatedData(): array
+    public function updateIngredient(string $id, string $ingredientId): void
+    {
+        $user = $this->user();
+        $repository = new RecipeRepository();
+        $recipe = $repository->findForUser((int) $id, (int) $user['id']);
+
+        if (!$recipe) {
+            $this->jsonOrExit(['error' => 'Recipe not found.'], 404);
+        }
+
+        $updated = $repository->updateIngredient(
+            (int) $id,
+            (int) $ingredientId,
+            (int) $user['id'],
+            $this->validatedIngredientData(false)
+        );
+
+        if (!$updated) {
+            $this->jsonOrExit(['error' => 'Ingredient not found or unchanged.'], 404);
+        }
+
+        $this->json($this->recipePayload($repository, $recipe));
+    }
+
+    public function deleteIngredient(string $id, string $ingredientId): void
+    {
+        $user = $this->user();
+        $repository = new RecipeRepository();
+        $recipe = $repository->findForUser((int) $id, (int) $user['id']);
+
+        if (!$recipe) {
+            $this->jsonOrExit(['error' => 'Recipe not found.'], 404);
+        }
+
+        if (!$repository->deleteIngredient(
+            (int) $id,
+            (int) $ingredientId,
+            (int) $user['id']
+        )) {
+            $this->jsonOrExit(['error' => 'Ingredient not found.'], 404);
+        }
+
+        $this->json($this->recipePayload($repository, $recipe));
+    }
+
+    private function recipePayload(RecipeRepository $repository, array $recipe): array
+    {
+        $ingredients = $repository->ingredients((int) $recipe['id']);
+        $nutrition = (new NutritionCalculator())->calculate(
+            $ingredients,
+            (float) $recipe['servings']
+        );
+
+        return [
+            'recipe_id' => (int) $recipe['id'],
+            'servings' => (float) $recipe['servings'],
+            'nutrition' => $nutrition,
+        ];
+    }
+
+    private function validatedRecipeData(): array
     {
         $data = [
             'name' => trim((string) ($_POST['name'] ?? '')),
@@ -155,5 +219,62 @@ final class RecipeController
         }
 
         return $data;
+    }
+
+    private function validatedIngredientData(bool $requiresProduct): array
+    {
+        $data = [
+            'product_id' => (int) ($_POST['product_id'] ?? 0),
+            'position' => max((int) ($_POST['position'] ?? 0), 0),
+            'original_description' => trim((string) ($_POST['original_description'] ?? '')),
+            'amount' => max((float) ($_POST['amount'] ?? 0), 0.001),
+            'unit' => in_array($_POST['unit'] ?? '', ['g', 'ml', 'serving'], true)
+                ? $_POST['unit']
+                : 'g',
+            'notes' => trim((string) ($_POST['notes'] ?? '')),
+        ];
+
+        if ($requiresProduct && $data['product_id'] < 1) {
+            $this->jsonOrExit(['error' => 'Please select a product.'], 422);
+        }
+
+        return $data;
+    }
+
+    private function wantsJson(): bool
+    {
+        return str_contains(
+                strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? '')),
+                'application/json'
+            ) || strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+    }
+
+    private function json(array $payload, int $status = 200): never
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload, JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    private function jsonOrExit(array $payload, int $status): never
+    {
+        if ($this->wantsJson()) {
+            $this->json($payload, $status);
+        }
+
+        http_response_code($status);
+        exit((string) ($payload['error'] ?? 'Request failed.'));
+    }
+
+    private function user(): array
+    {
+        return Container::instance()->get(AuthServiceInterface::class)->user();
+    }
+
+    private function notFound(): void
+    {
+        http_response_code(404);
+        view('errors/404', ['title' => 'Recipe not found']);
     }
 }
