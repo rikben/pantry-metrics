@@ -1,0 +1,67 @@
+/* /public_html/assets/css/source-concept-fix.css */
+
+.source-concept {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.source-concept-text small,
+.source-concept-text strong,
+.source-parsed-hint {
+    display: block;
+}
+
+.source-concept-text strong {
+    font-size: 1.03rem;
+}
+
+.source-parsed-hint {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.source-ingredient-linked .source-concept {
+    border-bottom-color: #b9d7c4;
+}
+
+.source-ingredient-linked .source-concept-text strong {
+    color: var(--text);
+}
+
+.linked-product-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 15px;
+    border: 1px solid #b9d7c4;
+    border-radius: 10px;
+    background: #edf8f1;
+}
+
+.linked-product-summary small,
+.linked-product-summary strong {
+    display: block;
+}
+
+.linked-product-image {
+    width: 50px;
+    height: 50px;
+    border-radius: 9px;
+    object-fit: contain;
+    background: white;
+}
+
+@media (max-width: 720px) {
+    .source-concept {
+        grid-template-columns: auto 1fr;
+    }
+
+    .source-concept .mapping-status {
+        grid-column: 2;
+    }
+}

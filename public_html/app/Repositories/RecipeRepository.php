@@ -63,27 +63,105 @@ final class RecipeRepository
         return (int) Database::connection()->lastInsertId();
     }
 
-    public function update(int $recipeId, int $userId, array $data): void
-    {
+    public function update(
+        int $recipeId,
+        int $userId,
+        array $data
+    ): void {
+        /*
+         * Keep the imported source identifier when a normal edit form
+         * does not submit one. Every bound parameter below occurs
+         * exactly once in the SQL statement.
+         */
         $statement = Database::connection()->prepare(
             'UPDATE recipes SET
-                name = :name, description = :description,
+                name = :name,
+                description = :description,
                 instructions = :instructions,
-                source_url = :source_url, servings = :servings
-             WHERE id = :id AND owner_user_id = :owner_user_id'
+                source_url = :source_url,
+                source_identifier = COALESCE(
+                    :source_identifier,
+                    source_identifier
+                ),
+                servings = :servings
+             WHERE id = :id
+               AND owner_user_id = :owner_user_id'
         );
+
+        $sourceIdentifier =
+            $data['source_identifier'] ?? null;
+
+        if ($sourceIdentifier === '') {
+            $sourceIdentifier = null;
+        }
+
+        $statement->execute([
+            'id' => $recipeId,
+            'owner_user_id' => $userId,
+            'name' => $data['name'],
+            'description' =>
+                $data['description'] !== ''
+                    ? $data['description']
+                    : null,
+            'instructions' =>
+                ($data['instructions'] ?? '') !== ''
+                    ? $data['instructions']
+                    : null,
+            'source_url' =>
+                $data['source_url'] !== ''
+                    ? $data['source_url']
+                    : null,
+            'source_identifier' => $sourceIdentifier,
+            'servings' => $data['servings'],
+        ]);
+    }
+    public function findBySource(
+        int $userId,
+        string $sourceIdentifier
+    ): ?array {
+        $statement = Database::connection()->prepare(
+            'SELECT * FROM recipes
+             WHERE owner_user_id = :user_id
+               AND source_identifier = :source_identifier
+             LIMIT 1'
+        );
+        $statement->execute([
+            'user_id' => $userId,
+            'source_identifier' => $sourceIdentifier,
+        ]);
+
+        return $statement->fetch() ?: null;
+    }
+
+    public function updateImported(
+        int $recipeId,
+        int $userId,
+        array $data
+    ): void {
+        $statement = Database::connection()->prepare(
+            'UPDATE recipes SET
+                name = :name,
+                description = :description,
+                instructions = :instructions,
+                source_url = :source_url,
+                source_identifier = :source_identifier,
+                servings = :servings,
+                is_archived = 0
+             WHERE id = :id
+               AND owner_user_id = :owner_user_id'
+        );
+
         $statement->execute([
             'id' => $recipeId,
             'owner_user_id' => $userId,
             'name' => $data['name'],
             'description' => $data['description'] ?: null,
-            'instructions' => $data['instructions'] ?? null,
+            'instructions' => $data['instructions'] ?: null,
             'source_url' => $data['source_url'] ?: null,
-            'source_identifier' => $data['source_identifier'] ?? null,
+            'source_identifier' => $data['source_identifier'],
             'servings' => $data['servings'],
         ]);
     }
-
     public function setImage(int $recipeId, int $userId, ?array $image): void
     {
         if ($image === null) {

@@ -1,0 +1,21 @@
+.recipe-copy {
+    display: grid;
+    gap: 26px;
+    margin-bottom: 30px;
+}
+
+.recipe-copy > div + div {
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+}
+
+.recipe-description-text,
+.recipe-instructions-text {
+    max-width: 78ch;
+    margin: 0;
+    white-space: normal;
+}
+
+.recipe-instructions-text {
+    line-height: 1.7;
+}

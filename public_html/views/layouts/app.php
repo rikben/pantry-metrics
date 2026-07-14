@@ -16,6 +16,8 @@ $app = config('app');
     <script src="/assets/js/app.js" defer></script>
     <link rel="stylesheet" href="/assets/css/recipe-import-workflow.css">
     <link rel="stylesheet" href="/assets/css/recipe-import-fixes.css">
+    <link rel="stylesheet" href="/assets/css/source-concept-fix.css">
+    <link rel="stylesheet" href="/assets/css/recipe-page-content-fix.css">
 </head>
 <body>
 <header class="site-header">

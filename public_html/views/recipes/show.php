@@ -92,6 +92,30 @@ unset($shoppingProduct);
     </div>
 </div>
 
+<?php if (
+    !empty($recipe['description'])
+    || !empty($recipe['instructions'])
+): ?>
+<section class="recipe-copy card" id="recipe-description">
+    <?php if (!empty($recipe['description'])): ?>
+        <div>
+            <p class="eyebrow">Description</p>
+            <p class="recipe-description-text">
+                <?= nl2br(e($recipe['description'])) ?>
+            </p>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($recipe['instructions'])): ?>
+        <div class="recipe-instructions">
+            <p class="eyebrow">Preparation</p>
+            <div class="recipe-instructions-text">
+                <?= nl2br(e($recipe['instructions'])) ?>
+            </div>
+        </div>
+    <?php endif; ?>
+</section>
+<?php endif; ?>
 <section class="stats nutrition-stats" id="nutrition-stats">
     <article class="card"><span class="stat-value" data-stat="energy_kcal"><?= e(round($perServing['energy_kcal'])) ?></span><span class="stat-label">kcal / serving</span></article>
     <article class="card"><span class="stat-value" data-stat="protein_g"><?= e(round($perServing['protein_g'], 1)) ?> g</span><span class="stat-label">Protein</span></article>
@@ -181,6 +205,10 @@ unset($shoppingProduct);
     </div>
 </section>
 
+<?php
+$sourceIngredients = $sourceIngredients ?? [];
+require __DIR__ . '/_source_ingredients.php';
+?>
 <section id="ah-shopping-list">
     <div class="section-heading">
         <div>
@@ -352,5 +380,7 @@ unset($shoppingProduct);
 <?= json_encode([
             'recipeId' => (int) $recipe['id'],
             'csrfToken' => \App\Core\Csrf::token(),
+    'selectedSourceIngredientId' => ($selectedSourceIngredientId ?? 0),
+    'selectedProductId' => ($selectedProductId ?? 0),
     ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>
 </script>

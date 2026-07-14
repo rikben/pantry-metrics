@@ -18,6 +18,7 @@ final class RemoteImageService
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
         'image/webp' => 'webp',
+        'image/avif' => 'avif',
     ];
 
     public function importFromPage(string $pageUrl, string $folder): ?array
@@ -86,13 +87,54 @@ final class RemoteImageService
                 $referer
             );
 
-            $mime = strtolower(
-                trim(explode(';', $response['content_type'])[0])
+            $headerMime = strtolower(
+                trim(
+                    explode(
+                        ';',
+                        (string) $response['content_type']
+                    )[0]
+                )
             );
-            $extension = self::ALLOWED_IMAGE_TYPES[$mime] ?? null;
+
+            /*
+             * Some CDNs return application/octet-stream or another generic
+             * header. Detect the actual image bytes as a fallback.
+             */
+            $detectedMime = null;
+
+            if (class_exists(\finfo::class)) {
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $value = $finfo->buffer(
+                    (string) $response['body']
+                );
+
+                if (is_string($value) && $value !== '') {
+                    $detectedMime = strtolower($value);
+                }
+            }
+
+            $mime = isset(
+                self::ALLOWED_IMAGE_TYPES[$headerMime]
+            )
+                ? $headerMime
+                : $detectedMime;
+
+            $extension = $mime !== null
+                ? (
+                    self::ALLOWED_IMAGE_TYPES[$mime]
+                    ?? null
+                )
+                : null;
 
             if ($extension === null) {
-                return null;
+                throw new \RuntimeException(
+                    'Unsupported image type. Header: '
+                    . ($headerMime !== ''
+                        ? $headerMime
+                        : 'unknown')
+                    . '; detected: '
+                    . ($detectedMime ?? 'unknown')
+                );
             }
 
             $folder = trim($folder, '/');
@@ -105,11 +147,16 @@ final class RemoteImageService
 
             $relativeDirectory = '/uploads/' . $folder;
             $absoluteDirectory =
-                dirname(__DIR__, 2) . $relativeDirectory;
+                dirname(__DIR__, 2)
+                . $relativeDirectory;
 
             if (
                 !is_dir($absoluteDirectory)
-                && !mkdir($absoluteDirectory, 0775, true)
+                && !mkdir(
+                    $absoluteDirectory,
+                    0775,
+                    true
+                )
                 && !is_dir($absoluteDirectory)
             ) {
                 throw new \RuntimeException(
@@ -117,18 +164,21 @@ final class RemoteImageService
                 );
             }
 
+            $body = (string) $response['body'];
             $filename =
-                hash('sha256', $response['body']) .
-                '.' .
-                $extension;
+                hash('sha256', $body)
+                . '.'
+                . $extension;
             $absolutePath =
-                $absoluteDirectory . '/' . $filename;
+                $absoluteDirectory
+                . '/'
+                . $filename;
 
             if (
                 !is_file($absolutePath)
                 && file_put_contents(
                     $absolutePath,
-                    $response['body'],
+                    $body,
                     LOCK_EX
                 ) === false
             ) {
@@ -139,13 +189,16 @@ final class RemoteImageService
 
             return [
                 'path' =>
-                    $relativeDirectory . '/' . $filename,
-                'source_url' => $response['url'],
+                    $relativeDirectory
+                    . '/'
+                    . $filename,
+                'source_url' =>
+                    (string) $response['url'],
             ];
         } catch (\Throwable $exception) {
             error_log(
-                'Remote image download failed: ' .
-                $exception->getMessage()
+                'Remote image download failed: '
+                . $exception->getMessage()
             );
 
             return null;

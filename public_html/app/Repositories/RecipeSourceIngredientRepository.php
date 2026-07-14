@@ -10,6 +10,25 @@ use PDO;
 
 final class RecipeSourceIngredientRepository
 {
+    public function hasAnyForRecipe(
+        int $recipeId,
+        int $userId
+    ): bool {
+        $statement = Database::connection()->prepare(
+            'SELECT 1
+             FROM recipe_source_ingredients rsi
+             INNER JOIN recipes r ON r.id = rsi.recipe_id
+             WHERE rsi.recipe_id = :recipe_id
+               AND r.owner_user_id = :user_id
+             LIMIT 1'
+        );
+        $statement->execute([
+            'recipe_id' => $recipeId,
+            'user_id' => $userId,
+        ]);
+
+        return (bool) $statement->fetchColumn();
+    }
     public function createMany(
         int $recipeId,
         array $ingredients

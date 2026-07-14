@@ -133,35 +133,66 @@ final class RecipeImportController
             ->get(AuthServiceInterface::class)
             ->user();
 
+        $recipeData = [
+            'name' => $name,
+            'description' => $description,
+            'instructions' => implode(
+                "\n\n",
+                array_map(
+                    static fn (
+                        string $step,
+                        int $index
+                    ): string =>
+                        ($index + 1) . '. ' . $step,
+                    $instructions,
+                    array_keys($instructions)
+                )
+            ),
+            'source_url' => $imported->sourceUrl,
+            'source_identifier' => $imported->sourceIdentifier,
+            'servings' => $servings,
+        ];
+
         $repository = new RecipeRepository();
-        $recipeId = $repository->create(
+        $sourceIngredientRepository =
+            new RecipeSourceIngredientRepository();
+
+        $existingRecipe = $repository->findBySource(
             (int) $user['id'],
-            [
-                'name' => $name,
-                'description' => $description,
-                'instructions' => implode(
-                    "\n\n",
-                    array_map(
-                        static fn (
-                            string $step,
-                            int $index
-                        ): string =>
-                            ($index + 1)
-                            . '. '
-                            . $step,
-                        $instructions,
-                        array_keys($instructions)
-                    )
-                ),
-                'source_url' => $imported->sourceUrl,
-                'source_identifier' =>
-                    $imported->sourceIdentifier,
-                'servings' => $servings,
-            ]
+            $imported->sourceIdentifier
         );
 
-        (new RecipeSourceIngredientRepository())
-            ->createMany($recipeId, $ingredients);
+        if ($existingRecipe !== null) {
+            $recipeId = (int) $existingRecipe['id'];
+
+            $repository->updateImported(
+                $recipeId,
+                (int) $user['id'],
+                $recipeData
+            );
+
+            if (
+                !$sourceIngredientRepository->hasAnyForRecipe(
+                    $recipeId,
+                    (int) $user['id']
+                )
+            ) {
+                $sourceIngredientRepository->createMany(
+                    $recipeId,
+                    $ingredients
+                );
+            }
+        } else {
+            $recipeId = $repository->create(
+                (int) $user['id'],
+                $recipeData
+            );
+
+            $sourceIngredientRepository->createMany(
+                $recipeId,
+                $ingredients
+            );
+        }
 
         $image = $imported->imageUrl !== null
             ? (new RemoteImageService())->downloadImage(
