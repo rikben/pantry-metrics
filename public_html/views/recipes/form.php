@@ -50,6 +50,12 @@ e($recipe[$field] ?? $default);
         <textarea name="description" rows="4"><?= $value('description') ?></textarea>
     </label>
 
+    <label class="full-width">
+        Preparation steps
+        <textarea name="instructions" rows="12"><?= $value('instructions') ?></textarea>
+        <small>Keep one numbered step per paragraph.</small>
+    </label>
+
     <div class="full-width actions">
         <button class="button" type="submit">Save recipe</button>
         <a class="button button-secondary" href="<?= $recipe ? '/recipes/' . e($recipe['id']) : '/recipes' ?>">Cancel</a>

@@ -9,6 +9,7 @@ use App\Auth\AuthServiceInterface;
 use App\Core\Container;
 use App\Repositories\ProductRepository;
 use App\Repositories\RecipeRepository;
+use App\Repositories\RecipeSourceIngredientRepository;
 use App\Services\NutritionCalculator;
 use App\Services\RemoteImageService;
 
@@ -120,7 +121,16 @@ final class RecipeController
             'recipe' => $recipe,
             'nutrition' => $payload['nutrition'],
             'products' => (new ProductRepository())->allForUser((int) $user['id']),
+            'sourceIngredients' => (
+                new RecipeSourceIngredientRepository()
+            )->allForRecipe(
+                (int) $id,
+                (int) $user['id']
+            ),
             'selectedProductId' => (int) ($_GET['selected_product'] ?? 0),
+            'selectedSourceIngredientId' => (int) (
+                $_GET['source_ingredient'] ?? 0
+            ),
         ]);
     }
 
@@ -189,6 +199,132 @@ final class RecipeController
         $this->json($this->recipePayload($repository, $recipe));
     }
 
+    public function linkSourceIngredient(
+        string $id,
+        string $sourceIngredientId
+    ): void {
+        $user = $this->user();
+
+        $productId = (int) (
+            $_POST['product_id'] ?? 0
+        );
+        $amount = max(
+            (float) ($_POST['amount'] ?? 0),
+            0.001
+        );
+        $unit = trim(
+            (string) ($_POST['unit'] ?? 'g')
+        );
+
+        $allowedUnits = [
+            'g', 'kg', 'mg',
+            'ml', 'l', 'cl', 'dl',
+            'tbsp', 'tsp', 'serving',
+        ];
+
+        if (
+            $productId < 1
+            || !in_array($unit, $allowedUnits, true)
+        ) {
+            $this->json(
+                ['error' => 'Invalid product mapping.'],
+                422
+            );
+        }
+
+        $linked = (
+            new RecipeSourceIngredientRepository()
+        )->link(
+            (int) $id,
+            (int) $sourceIngredientId,
+            (int) $user['id'],
+            $productId,
+            $amount,
+            $unit
+        );
+
+        if (!$linked) {
+            $this->json(
+                ['error' => 'Ingredient or product not found.'],
+                404
+            );
+        }
+
+        $this->sourceIngredientPayload(
+            (int) $id,
+            (int) $user['id']
+        );
+    }
+
+    public function ignoreSourceIngredient(
+        string $id,
+        string $sourceIngredientId
+    ): void {
+        $user = $this->user();
+
+        (
+            new RecipeSourceIngredientRepository()
+        )->setIgnored(
+            (int) $id,
+            (int) $sourceIngredientId,
+            (int) $user['id'],
+            true
+        );
+
+        $this->sourceIngredientPayload(
+            (int) $id,
+            (int) $user['id']
+        );
+    }
+
+    public function restoreSourceIngredient(
+        string $id,
+        string $sourceIngredientId
+    ): void {
+        $user = $this->user();
+
+        (
+            new RecipeSourceIngredientRepository()
+        )->setIgnored(
+            (int) $id,
+            (int) $sourceIngredientId,
+            (int) $user['id'],
+            false
+        );
+
+        $this->sourceIngredientPayload(
+            (int) $id,
+            (int) $user['id']
+        );
+    }
+
+    private function sourceIngredientPayload(
+        int $recipeId,
+        int $userId
+    ): never {
+        $repository = new RecipeRepository();
+        $recipe = $repository->findForUser(
+            $recipeId,
+            $userId
+        );
+
+        if (!$recipe) {
+            $this->json(
+                ['error' => 'Recipe not found.'],
+                404
+            );
+        }
+
+        $this->json([
+            'sourceIngredients' => (
+                new RecipeSourceIngredientRepository()
+            )->allForRecipe($recipeId, $userId),
+            'nutrition' => $this->recipePayload(
+                $repository,
+                $recipe
+            )['nutrition'],
+        ]);
+    }
     private function recipePayload(RecipeRepository $repository, array $recipe): array
     {
         $ingredients = $repository->ingredients((int) $recipe['id']);
@@ -209,6 +345,8 @@ final class RecipeController
         $data = [
             'name' => trim((string) ($_POST['name'] ?? '')),
             'description' => trim((string) ($_POST['description'] ?? '')),
+            'instructions' => trim((string) ($_POST['instructions'] ?? '')),
+            'source_identifier' => null,
             'source_url' => trim((string) ($_POST['source_url'] ?? '')),
             'servings' => max((float) ($_POST['servings'] ?? 1), 0.01),
         ];

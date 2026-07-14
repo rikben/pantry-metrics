@@ -1,0 +1,119 @@
+/* /public_html/assets/css/recipe-import-workflow.css */
+
+.import-fieldset {
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.import-fieldset legend {
+    padding: 0 8px;
+    font-weight: 800;
+}
+
+.import-repeatable-list {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.import-repeatable-row {
+    display: grid;
+    grid-template-columns:
+        minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+}
+
+.import-repeatable-row:has(.step-number) {
+    grid-template-columns:
+        34px minmax(0, 1fr) auto;
+}
+
+.step-number,
+.source-position {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--accent);
+    color: white;
+    font-weight: 800;
+}
+
+.source-ingredient-list {
+    display: grid;
+    gap: 14px;
+}
+
+.source-ingredient-card {
+    display: grid;
+    gap: 16px;
+    transition:
+        opacity 0.18s ease,
+        border-color 0.18s ease,
+        transform 0.18s ease;
+}
+
+.source-ingredient-linked {
+    border-color: #72a987;
+    background: #f5fbf7;
+}
+
+.source-ingredient-ignored {
+    opacity: 0.58;
+    background: #f5f5f5;
+}
+
+.source-ingredient-busy {
+    opacity: 0.6;
+    pointer-events: none;
+    transform: scale(0.997);
+}
+
+.source-ingredient-heading {
+    display: grid;
+    grid-template-columns:
+        auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+}
+
+.mapping-status,
+.mapping-progress {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 750;
+}
+
+.source-ingredient-controls {
+    display: grid;
+    grid-template-columns:
+        minmax(220px, 1fr)
+        120px
+        130px;
+    gap: 12px;
+}
+
+.source-ingredient-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+@media (max-width: 760px) {
+    .source-ingredient-heading {
+        grid-template-columns: auto 1fr;
+    }
+
+    .mapping-status {
+        grid-column: 2;
+    }
+
+    .source-ingredient-controls {
+        grid-template-columns: 1fr;
+    }
+}

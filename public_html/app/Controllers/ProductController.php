@@ -31,6 +31,7 @@ final class ProductController
             'product' => null,
             'action' => '/products',
             'returnTo' => $this->safeReturnTo((string) ($_GET['return_to'] ?? '')),
+            'sourceIngredientId' => max((int) ($_GET['source_ingredient'] ?? 0), 0),
         ]);
     }
 
@@ -50,8 +51,14 @@ final class ProductController
         }
 
         $returnTo = $this->safeReturnTo((string) ($_POST['return_to'] ?? ''));
+        $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
+        $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
         redirect($returnTo !== ''
-            ? $returnTo . '?selected_product=' . $productId . '#add-ingredient'
+            ? $returnTo . '?selected_product=' . $productId
+                . (($sourceIngredientId ?? 0) > 0
+                    ? '&source_ingredient=' . ($sourceIngredientId ?? 0)
+                    : '')
+                . '#source-ingredients'
             : '/products?created=' . $productId
         );
     }

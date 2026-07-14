@@ -10,7 +10,8 @@ declare(strict_types=1);
     </div>
     <div class="actions">
         <?php if (!$archived): ?>
-            <a class="button" href="/recipes/create">Create recipe</a>
+            <a class="button" href="/recipes/import">Import AH recipe</a>
+            <a class="button button-secondary" href="/recipes/create">Create manually</a>
             <a class="button button-secondary" href="/recipes?archived=1">Archived</a>
         <?php else: ?>
             <a class="button button-secondary" href="/recipes">Active recipes</a>

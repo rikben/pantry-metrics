@@ -22,6 +22,8 @@ final class ProductImportController
             'error' => null,
             'url' => '',
             'returnTo' => $this->safeReturnTo((string) ($_GET['return_to'] ?? '')),
+            'sourceIngredientId' => max((int) ($_GET['source_ingredient'] ?? 0), 0),
+            'sourceIngredientId' => max((int) ($_GET['source_ingredient'] ?? 0), 0),
         ]);
     }
 
@@ -29,6 +31,8 @@ final class ProductImportController
     {
         $url = trim((string) ($_POST['url'] ?? ''));
         $returnTo = $this->safeReturnTo((string) ($_POST['return_to'] ?? ''));
+        $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
+        $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
 
         try {
             $product = (new AhProductImporter())->import($url);
@@ -39,6 +43,7 @@ final class ProductImportController
                 'error' => $exception->getMessage(),
                 'url' => $url,
                 'returnTo' => $returnTo,
+                'sourceIngredientId' => $sourceIngredientId ?? 0,
             ]);
             return;
         }
@@ -48,6 +53,7 @@ final class ProductImportController
             'created_at' => time(),
             'product' => $product->toArray(),
             'return_to' => $returnTo,
+            'source_ingredient' => $sourceIngredientId ?? 0,
         ];
 
         $user = Container::instance()->get(AuthServiceInterface::class)->user();
@@ -104,7 +110,11 @@ final class ProductImportController
 
         $returnTo = $this->safeReturnTo((string) ($preview['return_to'] ?? ''));
         redirect($returnTo !== ''
-            ? $returnTo . '?selected_product=' . $productId . '#add-ingredient'
+            ? $returnTo . '?selected_product=' . $productId
+                . (($sourceIngredientId ?? 0) > 0
+                    ? '&source_ingredient=' . ($sourceIngredientId ?? 0)
+                    : '')
+                . '#source-ingredients'
             : '/products?imported=' . $productId
         );
     }

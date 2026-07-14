@@ -14,6 +14,8 @@ $app = config('app');
     <link rel="stylesheet" href="/assets/css/app.css">
     <link rel="stylesheet" href="/assets/css/shopping-list-patch.css">
     <script src="/assets/js/app.js" defer></script>
+    <link rel="stylesheet" href="/assets/css/recipe-import-workflow.css">
+    <link rel="stylesheet" href="/assets/css/recipe-import-fixes.css">
 </head>
 <body>
 <header class="site-header">
@@ -31,5 +33,6 @@ $app = config('app');
 <footer class="container site-footer">
     <p>Nutrition calculations are estimates. Always verify source labels when accuracy matters.</p>
 </footer>
+    <script defer src="/assets/js/recipe-import-workflow.js"></script>
 </body>
 </html>

@@ -32,14 +32,31 @@ final class RecipeRepository
     public function create(int $userId, array $data): int
     {
         $statement = Database::connection()->prepare(
-            'INSERT INTO recipes (owner_user_id, name, description, source_url, servings)
-             VALUES (:owner_user_id, :name, :description, :source_url, :servings)'
+            'INSERT INTO recipes (
+                owner_user_id,
+                name,
+                description,
+                instructions,
+                source_url,
+                source_identifier,
+                servings
+             ) VALUES (
+                :owner_user_id,
+                :name,
+                :description,
+                :instructions,
+                :source_url,
+                :source_identifier,
+                :servings
+             )'
         );
         $statement->execute([
             'owner_user_id' => $userId,
             'name' => $data['name'],
             'description' => $data['description'] ?: null,
+            'instructions' => $data['instructions'] ?? null,
             'source_url' => $data['source_url'] ?: null,
+            'source_identifier' => $data['source_identifier'] ?? null,
             'servings' => $data['servings'],
         ]);
 
@@ -51,6 +68,7 @@ final class RecipeRepository
         $statement = Database::connection()->prepare(
             'UPDATE recipes SET
                 name = :name, description = :description,
+                instructions = :instructions,
                 source_url = :source_url, servings = :servings
              WHERE id = :id AND owner_user_id = :owner_user_id'
         );
@@ -59,7 +77,9 @@ final class RecipeRepository
             'owner_user_id' => $userId,
             'name' => $data['name'],
             'description' => $data['description'] ?: null,
+            'instructions' => $data['instructions'] ?? null,
             'source_url' => $data['source_url'] ?: null,
+            'source_identifier' => $data['source_identifier'] ?? null,
             'servings' => $data['servings'],
         ]);
     }

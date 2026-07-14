@@ -1,0 +1,28 @@
+/* /public_html/assets/css/recipe-import-fixes.css */
+
+.linked-product-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid #b9d7c4;
+    border-radius: 10px;
+    background: #edf8f1;
+}
+
+.linked-product-summary small,
+.linked-product-summary strong {
+    display: block;
+}
+
+.linked-product-image {
+    width: 48px;
+    height: 48px;
+    border-radius: 9px;
+    object-fit: contain;
+    background: white;
+}
+
+.source-ingredient-linked .source-ingredient-heading {
+    margin-bottom: 0;
+}

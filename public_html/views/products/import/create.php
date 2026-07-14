@@ -17,6 +17,7 @@ declare(strict_types=1);
 <form class="card form-grid" method="post" action="/products/import/preview">
     <?= csrf_field() ?>
     <input type="hidden" name="return_to" value="<?= e($returnTo ?? '') ?>">
+    <input type="hidden" name="source_ingredient" value="<?= e($sourceIngredientId ?? 0) ?>">
 
     <label class="full-width">
         AH product URL

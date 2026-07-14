@@ -16,6 +16,7 @@ e($product[$field] ?? $default);
 <form class="card form-grid" method="post" action="<?= e($action) ?>">
     <?= csrf_field() ?>
     <input type="hidden" name="return_to" value="<?= e($returnTo ?? '') ?>">
+    <input type="hidden" name="source_ingredient" value="<?= e($sourceIngredientId ?? 0) ?>">
 
     <?php if (!empty($product['image_path'])): ?>
         <div class="full-width image-preview">
