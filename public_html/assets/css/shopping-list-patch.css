@@ -1,0 +1,200 @@
+/* /public_html/assets/css/shopping-list-patch.css */
+
+/*
+ * This file is loaded by adding one link to the layout. Keeping these styles
+ * separate avoids replacing the complete existing application stylesheet.
+ */
+
+.product-list-image,
+.shopping-product-image {
+    width: 58px;
+    height: 58px;
+    border-radius: 10px;
+    object-fit: contain;
+    background: #f0f3f0;
+}
+
+.product-image-placeholder {
+    display: inline-flex;
+    width: 58px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: #edf0ed;
+    color: var(--muted);
+}
+
+.product-image-placeholder-small {
+    width: 52px;
+    height: 52px;
+}
+
+.product-image-placeholder svg {
+    width: 25px;
+    height: 25px;
+    fill: currentColor;
+}
+
+.icon-actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.icon-actions form {
+    display: contents;
+}
+
+.icon-button {
+    display: inline-flex;
+    width: 36px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--accent);
+    cursor: pointer;
+    transition:
+        transform 0.16s ease,
+        background 0.16s ease,
+        border-color 0.16s ease;
+}
+
+.icon-button:hover {
+    transform: translateY(-1px);
+    border-color: var(--accent);
+    background: #edf5f0;
+}
+
+.icon-button-danger {
+    color: var(--danger);
+}
+
+.icon-button-danger:hover {
+    border-color: var(--danger);
+    background: #fbeded;
+}
+
+.icon-button svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+.section-copy {
+    max-width: 650px;
+    margin: 6px 0 0;
+    color: var(--muted);
+}
+
+.shopping-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.shopping-toolbar,
+.shopping-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    background: #f8faf8;
+}
+
+.shopping-toolbar {
+    border-bottom: 1px solid var(--border);
+}
+
+.shopping-actions {
+    border-top: 1px solid var(--border);
+}
+
+.shopping-list {
+    display: grid;
+}
+
+.shopping-product {
+    display: grid;
+    grid-template-columns: auto 58px minmax(0, 1fr) 110px;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    transition: opacity 0.16s ease, background 0.16s ease;
+}
+
+.shopping-product:last-child {
+    border-bottom: 0;
+}
+
+.shopping-product-disabled {
+    opacity: 0.48;
+    background: #fafbfa;
+}
+
+.shopping-product-select input {
+    width: 20px;
+    height: 20px;
+}
+
+.shopping-product-details {
+    min-width: 0;
+}
+
+.shopping-product-details strong,
+.shopping-product-details small {
+    display: block;
+}
+
+.shopping-product-details small {
+    white-space: normal;
+}
+
+.shopping-quantity-label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.shopping-quantity-label input {
+    margin-top: 4px;
+}
+
+.shopping-help {
+    max-width: 470px;
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 720px) {
+    .shopping-product {
+        grid-template-columns: auto 52px minmax(0, 1fr);
+    }
+
+    .shopping-quantity-label {
+        grid-column: 2 / -1;
+    }
+
+    .shopping-toolbar,
+    .shopping-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

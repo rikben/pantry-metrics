@@ -4,6 +4,73 @@
 declare(strict_types=1);
 
 $perServing = $nutrition['per_serving'];
+
+/*
+ * Build one AH shopping row per product. If a product occurs more than once,
+ * its ingredient amounts are combined before calculating package quantity.
+ */
+$shoppingProducts = [];
+
+foreach ($nutrition['ingredients'] as $ingredient) {
+    $sourceIdentifier = (string) ($ingredient['source_identifier'] ?? '');
+
+    if (!preg_match('/^wi(\d+)$/', $sourceIdentifier, $identifierMatch)) {
+        continue;
+    }
+
+    $productId = (int) $ingredient['product_id'];
+
+    if (!isset($shoppingProducts[$productId])) {
+        $shoppingProducts[$productId] = [
+                'product_id' => $productId,
+                'ah_id' => $identifierMatch[1],
+                'name' => $ingredient['product_name'],
+                'brand' => $ingredient['brand'],
+                'image_path' => $ingredient['image_path'],
+                'package_description' => $ingredient['package_description'],
+                'package_amount' => (float) ($ingredient['package_amount'] ?? 0),
+                'package_unit' => (string) ($ingredient['package_unit'] ?? ''),
+                'ingredient_amount' => 0.0,
+                'ingredient_unit' => (string) $ingredient['unit'],
+                'units_match' => true,
+        ];
+    }
+
+    $row = &$shoppingProducts[$productId];
+
+    if ($row['ingredient_unit'] !== (string) $ingredient['unit']) {
+        $row['units_match'] = false;
+    }
+
+    $row['ingredient_amount'] += (float) $ingredient['amount'];
+    unset($row);
+}
+
+foreach ($shoppingProducts as &$shoppingProduct) {
+    $canCalculate =
+            $shoppingProduct['units_match']
+            && $shoppingProduct['package_amount'] > 0
+            && $shoppingProduct['package_unit'] === $shoppingProduct['ingredient_unit'];
+
+    $shoppingProduct['default_quantity'] = $canCalculate
+            ? max(1, (int) ceil(
+                    $shoppingProduct['ingredient_amount'] /
+                    $shoppingProduct['package_amount']
+            ))
+            : 1;
+
+    $shoppingProduct['calculation_note'] = $canCalculate
+            ? sprintf(
+                    '%s %s needed; %s per package',
+                    rtrim(rtrim(number_format($shoppingProduct['ingredient_amount'], 3, '.', ''), '0'), '.'),
+                    $shoppingProduct['ingredient_unit'],
+                    $shoppingProduct['package_description']
+                            ?: rtrim(rtrim(number_format($shoppingProduct['package_amount'], 3, '.', ''), '0'), '.')
+                            . ' ' . $shoppingProduct['package_unit']
+            )
+            : 'Package quantity could not be calculated; defaulted to 1.';
+}
+unset($shoppingProduct);
 ?>
 <div class="recipe-hero">
     <?php if ($recipe['image_path']): ?>
@@ -57,9 +124,13 @@ $perServing = $nutrition['per_serving'];
                 <tr data-ingredient-id="<?= e($ingredient['id']) ?>">
                     <td>
                         <?php if ($ingredient['image_path']): ?>
-                            <img class="ingredient-image" src="<?= e($ingredient['image_path']) ?>" alt="">
+                            <img class="ingredient-image" src="<?= e($ingredient['image_path']) ?>" alt="" loading="lazy">
                         <?php else: ?>
-                            <span class="image-placeholder">—</span>
+                            <span class="product-image-placeholder product-image-placeholder-small" aria-label="No image">
+                                <svg aria-hidden="true" viewBox="0 0 24 24">
+                                    <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13Zm2 11.25 3.4-3.4a1 1 0 0 1 1.42 0l1.43 1.43 2.65-2.65a1 1 0 0 1 1.42 0L18 14.31V6H6v10.75ZM8.5 10A1.5 1.5 0 1 0 8.5 7a1.5 1.5 0 0 0 0 3Z"/>
+                                </svg>
+                            </span>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -69,8 +140,8 @@ $perServing = $nutrition['per_serving'];
                     <td><?= e($ingredient['package_description'] ?: 'Unknown') ?></td>
                     <td>
                         <div class="inline-ingredient-fields">
-                            <input class="inline-amount" type="number" value="<?= e($ingredient['amount']) ?>" min="0.001" step="0.001">
-                            <select class="inline-unit">
+                            <input class="inline-amount" type="number" value="<?= e($ingredient['amount']) ?>" min="0.001" step="0.001" aria-label="Ingredient amount">
+                            <select class="inline-unit" aria-label="Ingredient unit">
                                 <?php foreach (['g', 'ml', 'serving'] as $unit): ?>
                                     <option value="<?= e($unit) ?>" <?= $ingredient['unit'] === $unit ? 'selected' : '' ?>><?= e($unit) ?></option>
                                 <?php endforeach; ?>
@@ -80,9 +151,27 @@ $perServing = $nutrition['per_serving'];
                     <td data-cell="kcal"><?= e(round($ingredient['calculated_energy_kcal'], 1)) ?></td>
                     <td data-cell="protein"><?= e(round($ingredient['calculated_protein_g'], 1)) ?> g</td>
                     <td>
-                        <div class="table-actions">
-                            <button class="link-button ingredient-save" type="button">Save</button>
-                            <button class="link-button danger-link ingredient-delete" type="button">Remove</button>
+                        <div class="icon-actions">
+                            <button
+                                    class="icon-button ingredient-save"
+                                    type="button"
+                                    aria-label="Save ingredient changes"
+                                    title="Save changes"
+                            >
+                                <svg aria-hidden="true" viewBox="0 0 24 24">
+                                    <path d="M5 3h12l2 2v16H5V3Zm2 2v5h8V5H7Zm1 9v5h8v-5H8Z"/>
+                                </svg>
+                            </button>
+                            <button
+                                    class="icon-button icon-button-danger ingredient-delete"
+                                    type="button"
+                                    aria-label="Remove ingredient"
+                                    title="Remove ingredient"
+                            >
+                                <svg aria-hidden="true" viewBox="0 0 24 24">
+                                    <path d="M7 4V2h10v2h5v2h-2l-1 15H5L4 6H2V4h5Zm2 4v9h2V8H9Zm4 0v9h2V8h-2Z"/>
+                                </svg>
+                            </button>
                         </div>
                     </td>
                 </tr>
@@ -90,6 +179,99 @@ $perServing = $nutrition['per_serving'];
             </tbody>
         </table>
     </div>
+</section>
+
+<section id="ah-shopping-list">
+    <div class="section-heading">
+        <div>
+            <h2>Add to AH basket</h2>
+            <p class="section-copy">
+                Select the AH products you need. Quantities default to the number of packages needed for this recipe.
+            </p>
+        </div>
+    </div>
+
+    <?php if ($shoppingProducts === []): ?>
+        <div class="empty-state">
+            This recipe has no ingredients linked to an AH product ID.
+        </div>
+    <?php else: ?>
+        <div class="card shopping-card">
+            <div class="shopping-toolbar">
+                <label class="checkbox-label">
+                    <input id="shopping-select-all" type="checkbox" checked>
+                    Select all
+                </label>
+                <span id="shopping-selection-summary" aria-live="polite"></span>
+            </div>
+
+            <div class="shopping-list" id="ah-shopping-products">
+                <?php foreach ($shoppingProducts as $shoppingProduct): ?>
+                    <article
+                            class="shopping-product"
+                            data-ah-id="<?= e($shoppingProduct['ah_id']) ?>"
+                    >
+                        <label class="shopping-product-select">
+                            <input
+                                    class="shopping-product-checkbox"
+                                    type="checkbox"
+                                    checked
+                            >
+                            <span class="visually-hidden">
+                                Add <?= e($shoppingProduct['name']) ?>
+                            </span>
+                        </label>
+
+                        <?php if ($shoppingProduct['image_path']): ?>
+                            <img
+                                    class="shopping-product-image"
+                                    src="<?= e($shoppingProduct['image_path']) ?>"
+                                    alt=""
+                                    loading="lazy"
+                            >
+                        <?php else: ?>
+                            <span class="product-image-placeholder" aria-label="No image">
+                                <svg aria-hidden="true" viewBox="0 0 24 24">
+                                    <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13Zm2 11.25 3.4-3.4a1 1 0 0 1 1.42 0l1.43 1.43 2.65-2.65a1 1 0 0 1 1.42 0L18 14.31V6H6v10.75ZM8.5 10A1.5 1.5 0 1 0 8.5 7a1.5 1.5 0 0 0 0 3Z"/>
+                                </svg>
+                            </span>
+                        <?php endif; ?>
+
+                        <div class="shopping-product-details">
+                            <strong><?= e($shoppingProduct['name']) ?></strong>
+                            <small>
+                                <?= e($shoppingProduct['brand'] ?: 'AH product') ?>
+                                · AH <?= e($shoppingProduct['ah_id']) ?>
+                            </small>
+                            <small><?= e($shoppingProduct['calculation_note']) ?></small>
+                        </div>
+
+                        <label class="shopping-quantity-label">
+                            Packages
+                            <input
+                                    class="shopping-product-quantity"
+                                    type="number"
+                                    min="1"
+                                    max="99"
+                                    step="1"
+                                    value="<?= e($shoppingProduct['default_quantity']) ?>"
+                                    inputmode="numeric"
+                            >
+                        </label>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+
+            <div class="shopping-actions">
+                <button class="button" id="open-ah-shopping-list" type="button">
+                    Add selected products to AH
+                </button>
+                <p class="shopping-help">
+                    AH opens in a new tab and may ask you to confirm adding the products.
+                </p>
+            </div>
+        </div>
+    <?php endif; ?>
 </section>
 
 <section id="add-ingredient">

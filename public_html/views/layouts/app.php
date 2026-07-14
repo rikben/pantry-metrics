@@ -12,6 +12,7 @@ $app = config('app');
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($title ?? $app['name']) ?> · <?= e($app['name']) ?></title>
     <link rel="stylesheet" href="/assets/css/app.css">
+    <link rel="stylesheet" href="/assets/css/shopping-list-patch.css">
     <script src="/assets/js/app.js" defer></script>
 </head>
 <body>

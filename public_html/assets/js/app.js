@@ -57,6 +57,84 @@ document.addEventListener('DOMContentLoaded', () => {
         amount.focus();
     });
 
+    const shoppingContainer = document.querySelector('#ah-shopping-products');
+    const selectAll = document.querySelector('#shopping-select-all');
+    const shoppingButton = document.querySelector('#open-ah-shopping-list');
+    const shoppingSummary = document.querySelector('#shopping-selection-summary');
+
+    const shoppingRows = () => {
+        return Array.from(
+            shoppingContainer?.querySelectorAll('.shopping-product') || []
+        );
+    };
+
+    const updateShoppingState = () => {
+        const rows = shoppingRows();
+        const checkedRows = rows.filter((row) => {
+            return row.querySelector('.shopping-product-checkbox')?.checked;
+        });
+
+        rows.forEach((row) => {
+            const selected = row.querySelector('.shopping-product-checkbox')?.checked;
+            row.classList.toggle('shopping-product-disabled', !selected);
+            const quantity = row.querySelector('.shopping-product-quantity');
+            if (quantity) quantity.disabled = !selected;
+        });
+
+        if (selectAll) {
+            selectAll.checked = rows.length > 0 && checkedRows.length === rows.length;
+            selectAll.indeterminate = checkedRows.length > 0 && checkedRows.length < rows.length;
+        }
+
+        if (shoppingButton) {
+            shoppingButton.disabled = checkedRows.length === 0;
+        }
+
+        if (shoppingSummary) {
+            shoppingSummary.textContent = `${checkedRows.length} of ${rows.length} selected`;
+        }
+    };
+
+    selectAll?.addEventListener('change', () => {
+        shoppingRows().forEach((row) => {
+            const checkbox = row.querySelector('.shopping-product-checkbox');
+            if (checkbox) checkbox.checked = selectAll.checked;
+        });
+        updateShoppingState();
+    });
+
+    shoppingContainer?.addEventListener('change', (event) => {
+        if (
+            event.target.matches('.shopping-product-checkbox')
+            || event.target.matches('.shopping-product-quantity')
+        ) {
+            updateShoppingState();
+        }
+    });
+
+    shoppingButton?.addEventListener('click', () => {
+        const parameters = new URLSearchParams();
+
+        shoppingRows().forEach((row) => {
+            const checked = row.querySelector('.shopping-product-checkbox')?.checked;
+            if (!checked) return;
+
+            const ahId = row.dataset.ahId;
+            const quantityInput = row.querySelector('.shopping-product-quantity');
+            const quantity = Math.min(
+                99,
+                Math.max(1, Number.parseInt(quantityInput?.value || '1', 10) || 1)
+            );
+
+            parameters.append('p', `${ahId}:${quantity}`);
+        });
+
+        const url = `https://www.ah.nl/mijnlijst/add-multiple?${parameters.toString()}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+    });
+
+    updateShoppingState();
+
     const configElement = document.querySelector('#recipe-page-config');
     const ingredientForm = document.querySelector('#ingredient-form');
 
@@ -69,8 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableWrap = document.querySelector('#ingredients-table-wrap');
     const emptyState = document.querySelector('#ingredients-empty');
     const message = document.querySelector('#ingredient-message');
-
-    const escapeText = (value) => String(value ?? '');
 
     const request = async (url, formData) => {
         const response = await fetch(url, {
@@ -119,6 +195,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const svgElement = (pathData) => {
+        const namespace = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(namespace, 'svg');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        const path = document.createElementNS(namespace, 'path');
+        path.setAttribute('d', pathData);
+        svg.appendChild(path);
+        return svg;
+    };
+
     const ingredientRow = (ingredient) => {
         const row = document.createElement('tr');
         row.dataset.ingredientId = ingredient.id;
@@ -130,6 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
             image.className = 'ingredient-image';
             image.src = ingredient.image_path;
             image.alt = '';
+            image.loading = 'lazy';
             imageCell.appendChild(image);
         } else {
             imageCell.textContent = '—';
@@ -137,16 +225,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const productCell = document.createElement('td');
         const strong = document.createElement('strong');
-        strong.textContent = escapeText(ingredient.product_name);
+        strong.textContent = ingredient.product_name || '';
         productCell.appendChild(strong);
+
         if (ingredient.brand) {
             const small = document.createElement('small');
-            small.textContent = escapeText(ingredient.brand);
+            small.textContent = ingredient.brand;
             productCell.appendChild(small);
         }
 
         const packageCell = document.createElement('td');
-        packageCell.textContent = escapeText(ingredient.package_description || 'Unknown');
+        packageCell.textContent = ingredient.package_description || 'Unknown';
 
         const amountCell = document.createElement('td');
         const fields = document.createElement('div');
@@ -158,9 +247,12 @@ document.addEventListener('DOMContentLoaded', () => {
         amountInput.min = '0.001';
         amountInput.step = '0.001';
         amountInput.value = ingredient.amount;
+        amountInput.setAttribute('aria-label', 'Ingredient amount');
 
         const unitSelect = document.createElement('select');
         unitSelect.className = 'inline-unit';
+        unitSelect.setAttribute('aria-label', 'Ingredient unit');
+
         ['g', 'ml', 'serving'].forEach((value) => {
             const option = document.createElement('option');
             option.value = value;
@@ -182,17 +274,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const actionsCell = document.createElement('td');
         const actions = document.createElement('div');
-        actions.className = 'table-actions';
+        actions.className = 'icon-actions';
 
         const saveButton = document.createElement('button');
-        saveButton.className = 'link-button ingredient-save';
+        saveButton.className = 'icon-button ingredient-save';
         saveButton.type = 'button';
-        saveButton.textContent = 'Save';
+        saveButton.title = 'Save changes';
+        saveButton.setAttribute('aria-label', 'Save ingredient changes');
+        saveButton.appendChild(svgElement(
+            'M5 3h12l2 2v16H5V3Zm2 2v5h8V5H7Zm1 9v5h8v-5H8Z'
+        ));
 
         const deleteButton = document.createElement('button');
-        deleteButton.className = 'link-button danger-link ingredient-delete';
+        deleteButton.className = 'icon-button icon-button-danger ingredient-delete';
         deleteButton.type = 'button';
-        deleteButton.textContent = 'Remove';
+        deleteButton.title = 'Remove ingredient';
+        deleteButton.setAttribute('aria-label', 'Remove ingredient');
+        deleteButton.appendChild(svgElement(
+            'M7 4V2h10v2h5v2h-2l-1 15H5L4 6H2V4h5Zm2 4v9h2V8H9Zm4 0v9h2V8h-2Z'
+        ));
 
         actions.append(saveButton, deleteButton);
         actionsCell.appendChild(actions);
