@@ -1,0 +1,13 @@
+# /.gitignore
+.env
+/vendor/
+/node_modules/
+/storage/logs/*.log
+/storage/cache/*
+!/storage/logs/.gitkeep
+!/storage/cache/.gitkeep
+/database/.migration-state
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
