@@ -1,0 +1,70 @@
+# /.github/workflows/deploy-production.yml
+
+name: Deploy Pantry Metrics to production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "public_html/**"
+      - "database/**"
+      - ".github/workflows/deploy-production.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pantry-metrics-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build deployment package
+        run: |
+          set -euo pipefail
+
+          mkdir -p deploy/public_html
+          mkdir -p deploy/database
+
+          cp -a public_html/app deploy/public_html/
+          cp -a public_html/assets deploy/public_html/
+          cp -a public_html/config deploy/public_html/
+          cp -a public_html/views deploy/public_html/
+
+          cp public_html/index.php deploy/public_html/
+
+          if [ -f public_html/.htaccess ]; then
+            cp public_html/.htaccess deploy/public_html/
+          fi
+
+          cp -a database/. deploy/database/
+
+          # Never deploy generated/runtime data.
+          rm -rf deploy/public_html/uploads
+
+          # Never deploy local migration state or patch backups.
+          rm -f deploy/database/.migration-state
+          find deploy -type f -name "*.bak-*" -delete
+
+      - name: Deploy Pantry Metrics
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ vars.SSH_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ vars.SSH_PORT }}
+          source: "deploy/*"
+          target: ${{ vars.SSH_TARGET_DIR }}
+          strip_components: 1
+          overwrite: true
+          rm: false

@@ -11,3 +11,13 @@
 Thumbs.db
 .idea/
 .vscode/
+
+# Production/runtime uploads
+/public_html/uploads/products/*
+!/public_html/uploads/products/.gitkeep
+
+/public_html/uploads/recipes/*
+!/public_html/uploads/recipes/.gitkeep
+
+# Backups created by patch scripts
+*.bak-*
