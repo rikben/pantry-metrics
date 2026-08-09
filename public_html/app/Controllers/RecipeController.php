@@ -205,16 +205,20 @@ final class RecipeController
     ): void {
         $user = $this->user();
 
-        $productId = (int) (
-            $_POST['product_id'] ?? 0
+        $productId = (int) ($_POST['product_id'] ?? 0);
+        $amount = max((float) ($_POST['amount'] ?? 0), 0.001);
+        $unit = trim((string) ($_POST['unit'] ?? 'g'));
+
+        $convertedAmountText = trim(
+            (string) ($_POST['converted_amount'] ?? '')
         );
-        $amount = max(
-            (float) ($_POST['amount'] ?? 0),
-            0.001
+        $convertedAmount = $convertedAmountText !== ''
+            ? max((float) $convertedAmountText, 0.001)
+            : null;
+        $convertedUnit = trim(
+            (string) ($_POST['converted_unit'] ?? '')
         );
-        $unit = trim(
-            (string) ($_POST['unit'] ?? 'g')
-        );
+        $convertedUnit = $convertedUnit !== '' ? $convertedUnit : null;
 
         $allowedUnits = [
             'g', 'kg', 'mg',
@@ -226,22 +230,25 @@ final class RecipeController
             $productId < 1
             || !in_array($unit, $allowedUnits, true)
         ) {
-            $this->json(
-                ['error' => 'Invalid product mapping.'],
-                422
-            );
+            $this->json(['error' => 'Invalid product mapping.'], 422);
         }
 
-        $linked = (
-            new RecipeSourceIngredientRepository()
-        )->link(
-            (int) $id,
-            (int) $sourceIngredientId,
-            (int) $user['id'],
-            $productId,
-            $amount,
-            $unit
-        );
+        try {
+            $linked = (
+                new RecipeSourceIngredientRepository()
+            )->link(
+                (int) $id,
+                (int) $sourceIngredientId,
+                (int) $user['id'],
+                $productId,
+                $amount,
+                $unit,
+                $convertedAmount,
+                $convertedUnit
+            );
+        } catch (\InvalidArgumentException $exception) {
+            $this->json(['error' => $exception->getMessage()], 422);
+        }
 
         if (!$linked) {
             $this->json(
@@ -255,7 +262,6 @@ final class RecipeController
             (int) $user['id']
         );
     }
-
     public function ignoreSourceIngredient(
         string $id,
         string $sourceIngredientId

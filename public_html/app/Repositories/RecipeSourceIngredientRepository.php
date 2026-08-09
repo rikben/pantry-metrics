@@ -96,8 +96,10 @@ final class RecipeSourceIngredientRepository
         int $sourceIngredientId,
         int $userId,
         int $productId,
-        float $amount,
-        string $unit
+        float $sourceAmount,
+        string $sourceUnit,
+        ?float $convertedAmount = null,
+        ?string $convertedUnit = null
     ): bool {
         $connection = Database::connection();
         $connection->beginTransaction();
@@ -106,8 +108,7 @@ final class RecipeSourceIngredientRepository
             $sourceStatement = $connection->prepare(
                 'SELECT rsi.*
                  FROM recipe_source_ingredients rsi
-                 INNER JOIN recipes r
-                    ON r.id = rsi.recipe_id
+                 INNER JOIN recipes r ON r.id = rsi.recipe_id
                  WHERE rsi.id = :source_id
                    AND rsi.recipe_id = :recipe_id
                    AND r.owner_user_id = :user_id
@@ -126,12 +127,10 @@ final class RecipeSourceIngredientRepository
             }
 
             $productStatement = $connection->prepare(
-                'SELECT id FROM products
+                'SELECT id, reference_unit
+                 FROM products
                  WHERE id = :product_id
-                   AND (
-                       owner_user_id = :user_id
-                       OR owner_user_id IS NULL
-                   )
+                   AND (owner_user_id = :user_id OR owner_user_id IS NULL)
                    AND is_archived = 0
                  LIMIT 1'
             );
@@ -139,76 +138,91 @@ final class RecipeSourceIngredientRepository
                 'product_id' => $productId,
                 'user_id' => $userId,
             ]);
+            $product = $productStatement->fetch();
 
-            if (!$productStatement->fetchColumn()) {
+            if (!$product) {
                 $connection->rollBack();
                 return false;
             }
 
-            $recipeIngredientId =
-                $source['recipe_ingredient_id'];
+            $referenceUnit = (string) $product['reference_unit'];
+            $recipeAmount = $sourceAmount;
+            $recipeUnit = $sourceUnit;
+
+            if ($sourceUnit !== $referenceUnit) {
+                if (
+                    $convertedAmount === null
+                    || $convertedAmount <= 0
+                    || $convertedUnit !== $referenceUnit
+                ) {
+                    throw new \InvalidArgumentException(
+                        sprintf(
+                            'A conversion from %s to %s is required.',
+                            $sourceUnit,
+                            $referenceUnit
+                        )
+                    );
+                }
+
+                $recipeAmount = $convertedAmount;
+                $recipeUnit = $convertedUnit;
+            }
+
+            if (!in_array($recipeUnit, ['g', 'ml', 'serving'], true)) {
+                throw new \InvalidArgumentException(
+                    'The converted unit must be g, ml, or serving.'
+                );
+            }
+
+            $recipeIngredientId = $source['recipe_ingredient_id'];
 
             if ($recipeIngredientId) {
-                $ingredientStatement =
-                    $connection->prepare(
-                        'UPDATE recipe_ingredients
-                         SET product_id = :product_id,
-                             amount = :amount,
-                             unit = :unit,
-                             original_description =
-                                :description
-                         WHERE id = :id
-                           AND recipe_id = :recipe_id'
-                    );
+                $ingredientStatement = $connection->prepare(
+                    'UPDATE recipe_ingredients
+                     SET product_id = :product_id,
+                         amount = :amount,
+                         unit = :unit,
+                         original_description = :description
+                     WHERE id = :id
+                       AND recipe_id = :recipe_id'
+                );
                 $ingredientStatement->execute([
                     'id' => $recipeIngredientId,
                     'recipe_id' => $recipeId,
                     'product_id' => $productId,
-                    'amount' => $amount,
-                    'unit' => $unit,
+                    'amount' => $recipeAmount,
+                    'unit' => $recipeUnit,
                     'description' => $source['raw_text'],
                 ]);
             } else {
-                $ingredientStatement =
-                    $connection->prepare(
-                        'INSERT INTO recipe_ingredients (
-                            recipe_id,
-                            product_id,
-                            position,
-                            original_description,
-                            amount,
-                            unit,
-                            notes
-                         ) VALUES (
-                            :recipe_id,
-                            :product_id,
-                            :position,
-                            :description,
-                            :amount,
-                            :unit,
-                            NULL
-                         )'
-                    );
+                $ingredientStatement = $connection->prepare(
+                    'INSERT INTO recipe_ingredients (
+                        recipe_id, product_id, position,
+                        original_description, amount, unit, notes
+                     ) VALUES (
+                        :recipe_id, :product_id, :position,
+                        :description, :amount, :unit, NULL
+                     )'
+                );
                 $ingredientStatement->execute([
                     'recipe_id' => $recipeId,
                     'product_id' => $productId,
                     'position' => $source['position'],
                     'description' => $source['raw_text'],
-                    'amount' => $amount,
-                    'unit' => $unit,
+                    'amount' => $recipeAmount,
+                    'unit' => $recipeUnit,
                 ]);
-
-                $recipeIngredientId =
-                    (int) $connection->lastInsertId();
+                $recipeIngredientId = (int) $connection->lastInsertId();
             }
 
             $updateStatement = $connection->prepare(
                 'UPDATE recipe_source_ingredients
                  SET linked_product_id = :product_id,
-                     recipe_ingredient_id =
-                        :recipe_ingredient_id,
-                     parsed_amount = :amount,
-                     parsed_unit = :unit,
+                     recipe_ingredient_id = :recipe_ingredient_id,
+                     parsed_amount = :source_amount,
+                     parsed_unit = :source_unit,
+                     converted_amount = :converted_amount,
+                     converted_unit = :converted_unit,
                      is_ignored = 0
                  WHERE id = :id'
             );
@@ -216,8 +230,14 @@ final class RecipeSourceIngredientRepository
                 'id' => $sourceIngredientId,
                 'product_id' => $productId,
                 'recipe_ingredient_id' => $recipeIngredientId,
-                'amount' => $amount,
-                'unit' => $unit,
+                'source_amount' => $sourceAmount,
+                'source_unit' => $sourceUnit,
+                'converted_amount' => $sourceUnit !== $referenceUnit
+                    ? $recipeAmount
+                    : null,
+                'converted_unit' => $sourceUnit !== $referenceUnit
+                    ? $recipeUnit
+                    : null,
             ]);
 
             $connection->commit();
@@ -226,11 +246,9 @@ final class RecipeSourceIngredientRepository
             if ($connection->inTransaction()) {
                 $connection->rollBack();
             }
-
             throw $exception;
         }
     }
-
     public function setIgnored(
         int $recipeId,
         int $sourceIngredientId,

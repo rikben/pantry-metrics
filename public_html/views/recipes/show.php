@@ -205,10 +205,6 @@ unset($shoppingProduct);
     </div>
 </section>
 
-<?php
-$sourceIngredients = $sourceIngredients ?? [];
-require __DIR__ . '/_source_ingredients.php';
-?>
 <section id="ah-shopping-list">
     <div class="section-heading">
         <div>
@@ -301,6 +297,11 @@ require __DIR__ . '/_source_ingredients.php';
         </div>
     <?php endif; ?>
 </section>
+<?php
+$sourceIngredients = $sourceIngredients ?? [];
+require __DIR__ . '/_source_ingredients.php';
+?>
+
 
 <section id="add-ingredient">
     <div class="section-heading"><h2>Add ingredient</h2></div>

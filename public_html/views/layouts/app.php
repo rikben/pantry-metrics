@@ -18,6 +18,8 @@ $app = config('app');
     <link rel="stylesheet" href="/assets/css/recipe-import-fixes.css">
     <link rel="stylesheet" href="/assets/css/source-concept-fix.css">
     <link rel="stylesheet" href="/assets/css/recipe-page-content-fix.css">
+    <link rel="stylesheet" href="/assets/css/source-unit-conversion.css">
+    <link rel="stylesheet" href="/assets/css/auth.css">
 </head>
 <body>
 <header class="site-header">
@@ -26,6 +28,35 @@ $app = config('app');
         <nav aria-label="Main navigation">
             <a href="/recipes">Recipes</a>
             <a href="/products">Products</a>
+                    <?php
+            $layoutAuth = \App\Core\Container::instance()
+                ->get(\App\Auth\AuthServiceInterface::class);
+            ?>
+            <?php if ($layoutAuth->check()): ?>
+                <?php $layoutUser = $layoutAuth->user(); ?>
+                <span class="auth-user">
+                    <strong>
+                        <?= e(
+                            $layoutUser['display_name']
+                            ?: $layoutUser['email']
+                        ) ?>
+                    </strong>
+
+                    <form
+                        class="auth-logout-form"
+                        method="post"
+                        action="/auth/logout"
+                    >
+                        <?= csrf_field() ?>
+                        <button
+                            class="auth-logout-button"
+                            type="submit"
+                        >
+                            Sign out
+                        </button>
+                    </form>
+                </span>
+            <?php endif; ?>
         </nav>
     </div>
 </header>
@@ -36,5 +67,7 @@ $app = config('app');
     <p>Nutrition calculations are estimates. Always verify source labels when accuracy matters.</p>
 </footer>
     <script defer src="/assets/js/recipe-import-workflow.js"></script>
+    <script defer src="/assets/js/source-return-flow.js"></script>
+    <script defer src="/assets/js/source-conversion-ui.js"></script>
 </body>
 </html>

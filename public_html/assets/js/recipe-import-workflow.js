@@ -1,5 +1,8 @@
 /* /public_html/assets/js/recipe-import-workflow.js */
 document.addEventListener('DOMContentLoaded', () => {
+    /*
+     * Import preview: add and remove ingredient/instruction rows.
+     */
     document.querySelectorAll('[data-add-repeatable]').forEach((button) => {
         button.addEventListener('click', () => {
             const name = button.dataset.addRepeatable;
@@ -58,18 +61,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const configElement = document.querySelector('#recipe-page-config');
-    const list = document.querySelector('#source-ingredient-list');
+    const sourceList = document.querySelector('#source-ingredient-list');
 
-    if (!configElement || !list) return;
+    if (!configElement || !sourceList) {
+        return;
+    }
 
     const config = JSON.parse(configElement.textContent);
+    const accordion = document.querySelector('#source-ingredients');
 
     const post = async (url, values = {}) => {
         const form = new FormData();
         form.set('_csrf', config.csrfToken);
 
         Object.entries(values).forEach(([key, value]) => {
-            form.set(key, String(value));
+            form.set(key, String(value ?? ''));
         });
 
         const response = await fetch(url, {
@@ -92,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return payload;
     };
 
-    const number = (value, digits = 1) => {
+    const formatNumber = (value, digits = 1) => {
         return Number(value || 0).toLocaleString('en-US', {
             maximumFractionDigits: digits,
         });
@@ -173,14 +179,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const kcalCell = document.createElement('td');
         kcalCell.dataset.cell = 'kcal';
-        kcalCell.textContent = number(
+        kcalCell.textContent = formatNumber(
             ingredient.calculated_energy_kcal
         );
 
         const proteinCell = document.createElement('td');
         proteinCell.dataset.cell = 'protein';
         proteinCell.textContent =
-            `${number(ingredient.calculated_protein_g)} g`;
+            `${formatNumber(ingredient.calculated_protein_g)} g`;
 
         const actionsCell = document.createElement('td');
         const actions = document.createElement('div');
@@ -242,16 +248,18 @@ document.addEventListener('DOMContentLoaded', () => {
         empty?.classList.toggle('is-hidden', hasIngredients);
 
         const values = {
-            energy_kcal: number(
+            energy_kcal: formatNumber(
                 nutrition.per_serving.energy_kcal,
                 0
             ),
             protein_g:
-                `${number(nutrition.per_serving.protein_g)} g`,
+                `${formatNumber(nutrition.per_serving.protein_g)} g`,
             carbohydrates_g:
-                `${number(nutrition.per_serving.carbohydrates_g)} g`,
+                `${formatNumber(
+                    nutrition.per_serving.carbohydrates_g
+                )} g`,
             fat_g:
-                `${number(nutrition.per_serving.fat_g)} g`,
+                `${formatNumber(nutrition.per_serving.fat_g)} g`,
         };
 
         Object.entries(values).forEach(([key, value]) => {
@@ -267,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const updateProgress = () => {
         const cards = Array.from(
-            list.querySelectorAll('.source-ingredient-card')
+            sourceList.querySelectorAll('.source-ingredient-card')
         );
         const done = cards.filter((card) => {
             return card.classList.contains('source-ingredient-linked')
@@ -286,32 +294,104 @@ document.addEventListener('DOMContentLoaded', () => {
         card.classList.toggle('source-ingredient-busy', busy);
     };
 
+    const updateConversion = (card) => {
+        const option =
+            card.querySelector('.source-product-select')
+                ?.selectedOptions[0];
+        const referenceUnit =
+            option?.dataset.referenceUnit || '';
+        const sourceUnit =
+            card.querySelector('.source-unit')?.value
+            || 'serving';
+        const sourceAmount =
+            card.querySelector('.source-amount')?.value
+            || '1';
+
+        const conversion =
+            card.querySelector('.source-conversion');
+        const convertedUnit =
+            card.querySelector('.converted-unit');
+        const label =
+            card.querySelector('.conversion-source-label');
+
+        const required =
+            referenceUnit !== ''
+            && sourceUnit !== referenceUnit;
+
+        conversion?.classList.toggle(
+            'is-hidden',
+            !required
+        );
+
+        if (convertedUnit) {
+            convertedUnit.value =
+                required ? referenceUnit : '';
+        }
+
+        if (label) {
+            label.textContent =
+                `${sourceAmount} ${sourceUnit}`;
+        }
+
+        return required;
+    };
+
     const showLinkedProduct = (card) => {
-        const select = card.querySelector('.source-product-select');
+        const select =
+            card.querySelector('.source-product-select');
         const selected = select?.selectedOptions[0];
-        const summary = card.querySelector('.linked-product-summary');
-        const name = card.querySelector('.linked-product-name');
+        const summary =
+            card.querySelector('.linked-product-summary');
+        const name =
+            card.querySelector('.linked-product-name');
 
         if (name) {
             name.textContent =
-                selected?.textContent?.trim() || 'Linked product';
+                selected?.textContent?.trim()
+                || 'Linked product';
         }
 
         summary?.classList.remove('is-hidden');
     };
 
-    const linkCard = async (card, productId = null) => {
+    const linkCard = async (
+        card,
+        productId = null
+    ) => {
         const id = card.dataset.sourceIngredientId;
-        const select = card.querySelector('.source-product-select');
+        const select =
+            card.querySelector('.source-product-select');
 
         if (productId && select) {
             select.value = String(productId);
         }
 
-        const product = productId || select?.value;
+        const product =
+            productId || select?.value;
 
         if (!product) {
-            throw new Error('Select or create a product first.');
+            throw new Error(
+                'Select or create a product first.'
+            );
+        }
+
+        const conversionRequired =
+            updateConversion(card);
+        const convertedAmount =
+            card.querySelector('.converted-amount')
+                ?.value || '';
+        const convertedUnit =
+            card.querySelector('.converted-unit')
+                ?.value || '';
+
+        if (
+            conversionRequired
+            && convertedAmount === ''
+        ) {
+            throw new Error(
+                'Enter the equivalent amount '
+                + 'in the product unit.'
+            );
         }
 
         const payload = await post(
@@ -320,16 +400,31 @@ document.addEventListener('DOMContentLoaded', () => {
             {
                 product_id: product,
                 amount:
-                    card.querySelector('.source-amount')?.value || '1',
+                    card.querySelector('.source-amount')
+                        ?.value || '1',
                 unit:
-                    card.querySelector('.source-unit')?.value
-                    || 'serving',
+                    card.querySelector('.source-unit')
+                        ?.value || 'serving',
+                converted_amount:
+                    conversionRequired
+                        ? convertedAmount
+                        : '',
+                converted_unit:
+                    conversionRequired
+                        ? convertedUnit
+                        : '',
             }
         );
 
-        card.classList.add('source-ingredient-linked');
-        card.classList.remove('source-ingredient-ignored');
-        card.querySelector('.mapping-status').textContent = 'Linked';
+        card.classList.add(
+            'source-ingredient-linked'
+        );
+        card.classList.remove(
+            'source-ingredient-ignored'
+        );
+        card.querySelector(
+            '.mapping-status'
+        ).textContent = 'Linked';
 
         showLinkedProduct(card);
         renderNutrition(payload.nutrition);
@@ -338,54 +433,113 @@ document.addEventListener('DOMContentLoaded', () => {
         return payload;
     };
 
-    list.addEventListener('click', async (event) => {
-        const card = event.target.closest('.source-ingredient-card');
+    sourceList
+        .querySelectorAll('.source-ingredient-card')
+        .forEach(updateConversion);
+
+    sourceList.addEventListener('change', (event) => {
+        const card = event.target.closest(
+            '.source-ingredient-card'
+        );
+
+        if (
+            card
+            && (
+                event.target.matches(
+                    '.source-product-select'
+                )
+                || event.target.matches(
+                    '.source-unit'
+                )
+                || event.target.matches(
+                    '.source-amount'
+                )
+            )
+        ) {
+            updateConversion(card);
+        }
+    });
+
+    sourceList.addEventListener('click', async (event) => {
+        const card = event.target.closest(
+            '.source-ingredient-card'
+        );
 
         if (!card) return;
 
         try {
             setBusy(card, true);
 
-            if (event.target.closest('.source-link-button')) {
+            if (
+                event.target.closest(
+                    '.source-link-button'
+                )
+            ) {
                 await linkCard(card);
             }
 
-            if (event.target.closest('.source-ignore-button')) {
+            if (
+                event.target.closest(
+                    '.source-ignore-button'
+                )
+            ) {
                 const payload = await post(
                     `/recipes/${config.recipeId}`
                     + `/source-ingredients/`
-                    + `${card.dataset.sourceIngredientId}/ignore`
+                    + `${card.dataset.sourceIngredientId}`
+                    + '/ignore'
                 );
 
-                card.classList.add('source-ingredient-ignored');
-                card.classList.remove('source-ingredient-linked');
-                card.querySelector('.mapping-status').textContent =
-                    'Ignored';
+                card.classList.add(
+                    'source-ingredient-ignored'
+                );
+                card.classList.remove(
+                    'source-ingredient-linked'
+                );
+                card.querySelector(
+                    '.mapping-status'
+                ).textContent = 'Ignored';
 
-                card.querySelectorAll('input, select').forEach((field) => {
+                card.querySelectorAll(
+                    'input, select'
+                ).forEach((field) => {
                     field.disabled = true;
                 });
 
                 renderNutrition(payload.nutrition);
             }
 
-            if (event.target.closest('.source-restore-button')) {
+            if (
+                event.target.closest(
+                    '.source-restore-button'
+                )
+            ) {
                 const payload = await post(
                     `/recipes/${config.recipeId}`
                     + `/source-ingredients/`
-                    + `${card.dataset.sourceIngredientId}/restore`
+                    + `${card.dataset.sourceIngredientId}`
+                    + '/restore'
                 );
 
-                card.classList.remove('source-ingredient-ignored');
-                card.querySelector('.mapping-status').textContent =
-                    card.classList.contains('source-ingredient-linked')
+                card.classList.remove(
+                    'source-ingredient-ignored'
+                );
+                card.querySelector(
+                    '.mapping-status'
+                ).textContent =
+                    card.classList.contains(
+                        'source-ingredient-linked'
+                    )
                         ? 'Linked'
-                        : 'Not linked';
+                        : 'Needs linking';
 
-                card.querySelectorAll('input, select').forEach((field) => {
+                card.querySelectorAll(
+                    'input, select'
+                ).forEach((field) => {
                     field.disabled = false;
                 });
 
+                updateConversion(card);
                 renderNutrition(payload.nutrition);
             }
 
@@ -399,30 +553,70 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateProgress();
 
+    /*
+     * Returning from Create product / Import AH product.
+     */
     if (
         Number(config.selectedSourceIngredientId) > 0
         && Number(config.selectedProductId) > 0
     ) {
-        const card = list.querySelector(
+        const card = sourceList.querySelector(
             `[data-source-ingredient-id="`
             + `${config.selectedSourceIngredientId}"]`
         );
 
         if (card) {
-            setBusy(card, true);
+            if (accordion instanceof HTMLDetailsElement) {
+                accordion.open = true;
+            }
 
-            linkCard(
-                card,
-                String(config.selectedProductId)
-            ).catch((error) => {
-                window.alert(error.message);
-            }).finally(() => {
-                setBusy(card, false);
+            const select =
+                card.querySelector(
+                    '.source-product-select'
+                );
+
+            if (select) {
+                select.value = String(
+                    config.selectedProductId
+                );
+            }
+
+            const conversionRequired =
+                updateConversion(card);
+
+            window.setTimeout(() => {
                 card.scrollIntoView({
                     behavior: 'smooth',
                     block: 'center',
                 });
-            });
+
+                card.classList.add(
+                    'source-return-highlight'
+                );
+
+                window.setTimeout(() => {
+                    card.classList.remove(
+                        'source-return-highlight'
+                    );
+                }, 2200);
+            }, 100);
+
+            /*
+             * Auto-link only when the imported unit already matches
+             * the product reference unit.
+             */
+            if (!conversionRequired) {
+                setBusy(card, true);
+
+                linkCard(
+                    card,
+                    String(config.selectedProductId)
+                ).catch((error) => {
+                    window.alert(error.message);
+                }).finally(() => {
+                    setBusy(card, false);
+                });
+            }
         }
     }
 });

@@ -4,7 +4,7 @@
 declare(strict_types=1);
 
 use App\Auth\AuthServiceInterface;
-use App\Auth\DevelopmentAuthService;
+use App\Auth\AuthentikAuthService;
 use App\Core\Container;
 use App\Core\Env;
 
@@ -42,6 +42,8 @@ session_set_cookie_params([
 session_start();
 
 $container = Container::instance();
-$container->set(AuthServiceInterface::class, static fn (): AuthServiceInterface => new DevelopmentAuthService());
+$container->set(AuthServiceInterface::class,
+    static fn (): AuthServiceInterface => new AuthentikAuthService()
+);
 
 return $container;

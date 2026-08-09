@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\AuthController;
 use App\Controllers\HomeController;
 use App\Controllers\ProductController;
 use App\Controllers\ProductImportController;
@@ -16,6 +17,22 @@ require __DIR__ . '/app/bootstrap.php';
 SecurityHeadersMiddleware::handle();
 
 $router = new Router();
+$router->getPublic(
+    '/auth/login',
+    [AuthController::class, 'login']
+);
+$router->getPublic(
+    '/auth/callback',
+    [AuthController::class, 'callback']
+);
+$router->getPublic(
+    '/auth/logged-out',
+    [AuthController::class, 'loggedOut']
+);
+$router->post(
+    '/auth/logout',
+    [AuthController::class, 'logout']
+);
 
 $router->get('/', [HomeController::class, 'index']);
 

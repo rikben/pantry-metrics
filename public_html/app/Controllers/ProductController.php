@@ -54,10 +54,15 @@ final class ProductController
         $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
         $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
         redirect($returnTo !== ''
-            ? $returnTo . '?selected_product=' . $productId
-                . (($sourceIngredientId ?? 0) > 0
-                    ? '&source_ingredient=' . ($sourceIngredientId ?? 0)
-                    : '')
+            ? $returnTo
+                . '?selected_product='
+                . $productId
+                . (
+                    $sourceIngredientId > 0
+                        ? '&source_ingredient='
+                            . $sourceIngredientId
+                        : ''
+                )
                 . '#source-ingredients'
             : '/products?created=' . $productId
         );
