@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 use App\Auth\AuthServiceInterface;
 use App\Auth\AuthentikAuthService;
+use App\Auth\DevelopmentAuthService;
 use App\Core\Container;
 use App\Core\Env;
 
@@ -43,7 +44,9 @@ session_start();
 
 $container = Container::instance();
 $container->set(AuthServiceInterface::class,
-    static fn (): AuthServiceInterface => new AuthentikAuthService()
+    env('APP_TEST_AUTH') === '1'
+        ? static fn (): AuthServiceInterface => new DevelopmentAuthService()
+        : static fn (): AuthServiceInterface => new AuthentikAuthService()
 );
 
 return $container;

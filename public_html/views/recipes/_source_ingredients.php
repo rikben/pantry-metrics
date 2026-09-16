@@ -75,15 +75,29 @@ declare(strict_types=1);
                                 Product
                                 <select
                                         class="source-product-select"
+                                        data-combobox="product"
                                         <?= $sourceIngredient['is_ignored']
                                                 ? 'disabled'
                                                 : '' ?>
                                 >
-                                    <option value="">Select a product</option>
+                                    <option value="">Search a product…</option>
                                     <?php foreach ($products as $product): ?>
+                                        <?php
+                                        $searchText = trim(implode(' ', array_filter([
+                                                $product['name'],
+                                                $product['brand'],
+                                                $product['source_identifier'],
+                                        ])));
+                                        $metaText = 'per ' . $product['reference_amount'] . ' ' . $product['reference_unit']
+                                                . ($product['brand'] ? ' · ' . $product['brand'] : '');
+                                        ?>
                                         <option
                                                 value="<?= e($product['id']) ?>"
                                                 data-reference-unit="<?= e($product['reference_unit']) ?>"
+                                                data-search="<?= e(mb_strtolower($searchText)) ?>"
+                                                data-name="<?= e($product['name']) ?>"
+                                                data-meta="<?= e($metaText) ?>"
+                                                data-image="<?= e($product['image_path'] ?? '') ?>"
                                                 <?= (int) $sourceIngredient['linked_product_id']
                                                 === (int) $product['id']
                                                         ? 'selected'
@@ -137,6 +151,8 @@ declare(strict_types=1);
                             </label>
                         </div>
 
+                        <p class="source-conversion-note is-hidden"></p>
+
                         <div class="source-conversion is-hidden">
                             <p>
                                 Enter the equivalent amount in the product's
@@ -166,6 +182,14 @@ declare(strict_types=1);
                                         ) ?>"
                                 >
                             </div>
+                            <label class="checkbox-label">
+                                <input
+                                        class="source-remember-conversion"
+                                        type="checkbox"
+                                        checked
+                                >
+                                Remember this conversion for future recipes
+                            </label>
                         </div>
 
                         <div class="source-ingredient-actions">

@@ -7,11 +7,14 @@ namespace App\Controllers;
 
 use App\Auth\AuthServiceInterface;
 use App\Core\Container;
+use App\Repositories\CategoryRepository;
 use App\Repositories\ProductRepository;
+use App\Repositories\ProductUnitConversionRepository;
 use App\Repositories\RecipeRepository;
 use App\Repositories\RecipeSourceIngredientRepository;
 use App\Services\NutritionCalculator;
 use App\Services\RemoteImageService;
+use App\Services\UnitConverter;
 
 final class RecipeController
 {
@@ -19,11 +22,23 @@ final class RecipeController
     {
         $user = $this->user();
         $archived = ($_GET['archived'] ?? '') === '1';
+        $categoryId = (int) ($_GET['category'] ?? 0);
+
+        $recipes = (new RecipeRepository())->allForUser(
+            (int) $user['id'],
+            $archived,
+            $categoryId > 0 ? $categoryId : null
+        );
+
+        $categoryRepository = new CategoryRepository();
 
         view('recipes/index', [
             'title' => $archived ? 'Archived recipes' : 'Recipes',
-            'recipes' => (new RecipeRepository())->allForUser((int) $user['id'], $archived),
+            'recipes' => $recipes,
             'archived' => $archived,
+            'categories' => $categoryRepository->all(),
+            'selectedCategoryId' => $categoryId,
+            'recipeCategories' => $categoryRepository->forRecipes(array_column($recipes, 'id')),
         ]);
     }
 
@@ -33,6 +48,8 @@ final class RecipeController
             'title' => 'Create recipe',
             'recipe' => null,
             'action' => '/recipes',
+            'categories' => (new CategoryRepository())->all(),
+            'selectedCategoryIds' => [],
         ]);
     }
 
@@ -42,6 +59,7 @@ final class RecipeController
         $data = $this->validatedRecipeData();
         $repository = new RecipeRepository();
         $recipeId = $repository->create((int) $user['id'], $data);
+        (new CategoryRepository())->sync($recipeId, $this->submittedCategoryIds());
 
         if ($data['source_url'] !== '') {
             $repository->setImage(
@@ -64,10 +82,14 @@ final class RecipeController
             return;
         }
 
+        $categoryRepository = new CategoryRepository();
+
         view('recipes/form', [
             'title' => 'Edit recipe',
             'recipe' => $recipe,
             'action' => "/recipes/{$id}/update",
+            'categories' => $categoryRepository->all(),
+            'selectedCategoryIds' => $categoryRepository->idsForRecipe((int) $id),
         ]);
     }
 
@@ -77,6 +99,7 @@ final class RecipeController
         $data = $this->validatedRecipeData();
         $repository = new RecipeRepository();
         $repository->update((int) $id, (int) $user['id'], $data);
+        (new CategoryRepository())->sync((int) $id, $this->submittedCategoryIds());
 
         if ($data['source_url'] !== '' && isset($_POST['refresh_image'])) {
             $repository->setImage(
@@ -115,12 +138,19 @@ final class RecipeController
         }
 
         $payload = $this->recipePayload($repository, $recipe);
+        $products = (new ProductRepository())->allForUser((int) $user['id']);
+        $categoryRepository = new CategoryRepository();
 
         view('recipes/show', [
             'title' => $recipe['name'],
             'recipe' => $recipe,
             'nutrition' => $payload['nutrition'],
-            'products' => (new ProductRepository())->allForUser((int) $user['id']),
+            'products' => $products,
+            'productConversions' => (new ProductUnitConversionRepository())->forProducts(
+                array_column($products, 'id')
+            ),
+            'categories' => $categoryRepository->all(),
+            'recipeCategoryIds' => $categoryRepository->idsForRecipe((int) $id),
             'sourceIngredients' => (
                 new RecipeSourceIngredientRepository()
             )->allForRecipe(
@@ -145,6 +175,17 @@ final class RecipeController
         }
 
         $data = $this->validatedIngredientData(true);
+
+        $product = (new ProductRepository())->findForUser($data['product_id'], (int) $user['id']);
+
+        if (!$product) {
+            $this->jsonOrExit(['error' => 'Please select a product.'], 422);
+        }
+
+        $resolved = $this->resolveIngredientUnit((int) $product['id'], (string) $product['reference_unit'], $data);
+        $data['amount'] = $resolved['amount'];
+        $data['unit'] = $resolved['unit'];
+
         $repository->addIngredient((int) $id, $data);
 
         if ($this->wantsJson()) {
@@ -164,11 +205,33 @@ final class RecipeController
             $this->jsonOrExit(['error' => 'Recipe not found.'], 404);
         }
 
+        $data = $this->validatedIngredientData(false);
+
+        $existingIngredient = null;
+        foreach ($repository->ingredients((int) $id) as $ingredient) {
+            if ((int) $ingredient['id'] === (int) $ingredientId) {
+                $existingIngredient = $ingredient;
+                break;
+            }
+        }
+
+        if (!$existingIngredient) {
+            $this->jsonOrExit(['error' => 'Ingredient not found.'], 404);
+        }
+
+        $resolved = $this->resolveIngredientUnit(
+            (int) $existingIngredient['product_id'],
+            (string) $existingIngredient['reference_unit'],
+            $data
+        );
+        $data['amount'] = $resolved['amount'];
+        $data['unit'] = $resolved['unit'];
+
         $updated = $repository->updateIngredient(
             (int) $id,
             (int) $ingredientId,
             (int) $user['id'],
-            $this->validatedIngredientData(false)
+            $data
         );
 
         if (!$updated) {
@@ -219,6 +282,7 @@ final class RecipeController
             (string) ($_POST['converted_unit'] ?? '')
         );
         $convertedUnit = $convertedUnit !== '' ? $convertedUnit : null;
+        $rememberConversion = ($_POST['remember_conversion'] ?? '1') === '1';
 
         $allowedUnits = [
             'g', 'kg', 'mg',
@@ -244,7 +308,8 @@ final class RecipeController
                 $amount,
                 $unit,
                 $convertedAmount,
-                $convertedUnit
+                $convertedUnit,
+                $rememberConversion
             );
         } catch (\InvalidArgumentException $exception) {
             $this->json(['error' => $exception->getMessage()], 422);
@@ -365,16 +430,50 @@ final class RecipeController
         return $data;
     }
 
+    /**
+     * @return int[]
+     */
+    private function submittedCategoryIds(): array
+    {
+        $ids = $_POST['category_ids'] ?? [];
+
+        if (!is_array($ids)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', $ids)));
+    }
+
+    /**
+     * Units accepted here are broader than the g/ml/serving that
+     * recipe_ingredients actually stores: a culinary unit (tbsp, tsp,
+     * kg, ...) is converted to the product's reference unit via
+     * UnitConverter before it reaches the repository, using either an
+     * explicit converted_amount or a conversion remembered earlier for
+     * that product.
+     */
+    private const ALLOWED_ENTRY_UNITS = [
+        'g', 'kg', 'mg',
+        'ml', 'l', 'cl', 'dl',
+        'tbsp', 'tsp', 'serving',
+    ];
+
     private function validatedIngredientData(bool $requiresProduct): array
     {
+        $convertedAmountText = trim((string) ($_POST['converted_amount'] ?? ''));
+
         $data = [
             'product_id' => (int) ($_POST['product_id'] ?? 0),
             'position' => max((int) ($_POST['position'] ?? 0), 0),
             'original_description' => trim((string) ($_POST['original_description'] ?? '')),
             'amount' => max((float) ($_POST['amount'] ?? 0), 0.001),
-            'unit' => in_array($_POST['unit'] ?? '', ['g', 'ml', 'serving'], true)
+            'unit' => in_array($_POST['unit'] ?? '', self::ALLOWED_ENTRY_UNITS, true)
                 ? $_POST['unit']
                 : 'g',
+            'converted_amount' => $convertedAmountText !== ''
+                ? max((float) $convertedAmountText, 0.001)
+                : null,
+            'remember_conversion' => ($_POST['remember_conversion'] ?? '1') === '1',
             'notes' => trim((string) ($_POST['notes'] ?? '')),
         ];
 
@@ -383,6 +482,33 @@ final class RecipeController
         }
 
         return $data;
+    }
+
+    /**
+     * Resolves the culinary unit/amount a form submitted into the
+     * product's own reference unit (g, ml or serving), which is all
+     * recipe_ingredients can store. Ends the request with a 422 when a
+     * conversion is required but neither given explicitly nor known yet.
+     *
+     * @return array{amount: float, unit: string}
+     */
+    private function resolveIngredientUnit(int $productId, string $referenceUnit, array $data): array
+    {
+        try {
+            $resolved = (new UnitConverter())->resolve(
+                $productId,
+                $referenceUnit,
+                $data['amount'],
+                $data['unit'],
+                $data['converted_amount'],
+                $referenceUnit,
+                $data['remember_conversion']
+            );
+        } catch (\InvalidArgumentException $exception) {
+            $this->jsonOrExit(['error' => $exception->getMessage()], 422);
+        }
+
+        return ['amount' => $resolved['amount'], 'unit' => $resolved['unit']];
     }
 
     private function wantsJson(): bool

@@ -56,14 +56,11 @@ final class ProductImportController
             'source_ingredient' => $sourceIngredientId ?? 0,
         ];
 
-        $user = Container::instance()->get(AuthServiceInterface::class)->user();
-
         view('products/import/preview', [
             'title' => 'Review AH product',
             'product' => $product,
             'previewToken' => $token,
             'existing' => (new ProductRepository())->findBySource(
-                (int) $user['id'],
                 'ah',
                 $product->sourceIdentifier
             ),
@@ -80,6 +77,8 @@ final class ProductImportController
             http_response_code(422);
             exit('The import preview has expired.');
         }
+
+        $sourceIngredientId = (int) ($preview['source_ingredient'] ?? 0);
 
         $product = ImportedProduct::fromArray((array) $preview['product']);
         $data = $product->toArray();
@@ -100,7 +99,7 @@ final class ProductImportController
 
         $user = Container::instance()->get(AuthServiceInterface::class)->user();
         $repository = new ProductRepository();
-        $productId = $repository->upsertImported((int) $user['id'], $data);
+        $productId = $repository->upsertImported($data);
 
         $repository->setImage(
             $productId,
@@ -111,8 +110,8 @@ final class ProductImportController
         $returnTo = $this->safeReturnTo((string) ($preview['return_to'] ?? ''));
         redirect($returnTo !== ''
             ? $returnTo . '?selected_product=' . $productId
-                . (($sourceIngredientId ?? 0) > 0
-                    ? '&source_ingredient=' . ($sourceIngredientId ?? 0)
+                . ($sourceIngredientId > 0
+                    ? '&source_ingredient=' . $sourceIngredientId
                     : '')
                 . '#source-ingredients'
             : '/products?imported=' . $productId

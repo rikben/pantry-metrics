@@ -92,6 +92,19 @@ unset($shoppingProduct);
     </div>
 </div>
 
+<?php if (!empty($recipeCategoryIds)): ?>
+    <?php
+    $recipeCategoryLookup = array_column($categories ?? [], null, 'id');
+    ?>
+    <div class="category-badges">
+        <?php foreach ($recipeCategoryIds as $categoryId): ?>
+            <?php if (isset($recipeCategoryLookup[$categoryId])): ?>
+                <span class="category-badge"><?= e($recipeCategoryLookup[$categoryId]['name']) ?></span>
+            <?php endif; ?>
+        <?php endforeach; ?>
+    </div>
+<?php endif; ?>
+
 <?php if (
     !empty($recipe['description'])
     || !empty($recipe['instructions'])
@@ -121,7 +134,18 @@ unset($shoppingProduct);
     <article class="card"><span class="stat-value" data-stat="protein_g"><?= e(round($perServing['protein_g'], 1)) ?> g</span><span class="stat-label">Protein</span></article>
     <article class="card"><span class="stat-value" data-stat="carbohydrates_g"><?= e(round($perServing['carbohydrates_g'], 1)) ?> g</span><span class="stat-label">Carbohydrates</span></article>
     <article class="card"><span class="stat-value" data-stat="fat_g"><?= e(round($perServing['fat_g'], 1)) ?> g</span><span class="stat-label">Fat</span></article>
+    <article class="card is-hidden" data-stat-extra><span class="stat-value" data-stat="saturated_fat_g"><?= e(round($perServing['saturated_fat_g'], 1)) ?> g</span><span class="stat-label">Saturated fat</span></article>
+    <article class="card is-hidden" data-stat-extra><span class="stat-value" data-stat="sugars_g"><?= e(round($perServing['sugars_g'], 1)) ?> g</span><span class="stat-label">Sugars</span></article>
+    <article class="card is-hidden" data-stat-extra><span class="stat-value" data-stat="fiber_g"><?= e(round($perServing['fiber_g'], 1)) ?> g</span><span class="stat-label">Fiber</span></article>
+    <article class="card is-hidden" data-stat-extra><span class="stat-value" data-stat="salt_g"><?= e(round($perServing['salt_g'], 2)) ?> g</span><span class="stat-label">Salt</span></article>
+    <article class="card is-hidden" data-stat-extra><span class="stat-value" data-stat="energy_kj"><?= e(round($perServing['energy_kj'])) ?></span><span class="stat-label">kJ / serving</span></article>
 </section>
+
+<div class="nutrition-stats-toggle">
+    <button class="link-button" type="button" id="nutrition-stats-expand" aria-expanded="false" aria-controls="nutrition-stats">
+        Show all metrics
+    </button>
+</div>
 
 <section>
     <div class="section-heading"><h2>Ingredients</h2></div>
@@ -312,14 +336,9 @@ require __DIR__ . '/_source_ingredients.php';
         <?= csrf_field() ?>
 
         <label class="full-width">
-            Search product
-            <input type="search" id="product-search" placeholder="Search by product name, brand or AH ID">
-        </label>
-
-        <label class="full-width">
             Product
-            <select name="product_id" id="product-select" required>
-                <option value="">Select a product</option>
+            <select name="product_id" id="product-select" data-combobox="product" required>
+                <option value="">Search a product…</option>
                 <?php foreach ($products as $product): ?>
                     <?php
                     $searchText = trim(implode(' ', array_filter([
@@ -327,10 +346,19 @@ require __DIR__ . '/_source_ingredients.php';
                             $product['brand'],
                             $product['source_identifier'],
                     ])));
+                    $metaText = trim(implode(' · ', array_filter([
+                            $product['brand'],
+                            $product['source_identifier'],
+                            $product['package_description'],
+                    ])));
                     ?>
                     <option
                             value="<?= e($product['id']) ?>"
                             data-search="<?= e(mb_strtolower($searchText)) ?>"
+                            data-name="<?= e($product['name']) ?>"
+                            data-meta="<?= e($metaText) ?>"
+                            data-image="<?= e($product['image_path'] ?? '') ?>"
+                            data-reference-unit="<?= e($product['reference_unit']) ?>"
                             data-package-amount="<?= e($product['package_amount']) ?>"
                             data-package-unit="<?= e($product['package_unit']) ?>"
                             <?= $selectedProductId === (int) $product['id'] ? 'selected' : '' ?>
@@ -353,13 +381,37 @@ require __DIR__ . '/_source_ingredients.php';
             Unit
             <select id="ingredient-unit" name="unit">
                 <option value="g">g</option>
+                <option value="kg">kg</option>
+                <option value="mg">mg</option>
                 <option value="ml">ml</option>
+                <option value="l">l</option>
+                <option value="cl">cl</option>
+                <option value="dl">dl</option>
+                <option value="tbsp">tbsp</option>
+                <option value="tsp">tsp</option>
                 <option value="serving">serving</option>
             </select>
         </label>
 
         <div class="full-width actions">
             <button class="button button-secondary" id="use-whole-package" type="button" disabled>Use whole package</button>
+        </div>
+
+        <div class="full-width ingredient-conversion is-hidden" id="ingredient-conversion">
+            <p>
+                <span id="ingredient-conversion-note">Enter the equivalent amount in the product's nutrition unit.</span>
+            </p>
+            <div class="source-conversion-fields">
+                <span class="conversion-source-label" id="ingredient-conversion-label"></span>
+                <span>=</span>
+                <input class="converted-amount" type="number" name="converted_amount" id="ingredient-converted-amount" min="0.001" step="0.001" placeholder="e.g. 15">
+                <input class="converted-unit" type="text" name="converted_unit" id="ingredient-converted-unit" readonly>
+            </div>
+            <label class="checkbox-label">
+                <input type="hidden" name="remember_conversion" value="0">
+                <input type="checkbox" name="remember_conversion" value="1" id="ingredient-remember-conversion" checked>
+                Remember this conversion for future recipes
+            </label>
         </div>
 
         <label class="full-width">
@@ -383,5 +435,6 @@ require __DIR__ . '/_source_ingredients.php';
             'csrfToken' => \App\Core\Csrf::token(),
     'selectedSourceIngredientId' => ($selectedSourceIngredientId ?? 0),
     'selectedProductId' => ($selectedProductId ?? 0),
+    'productConversions' => $productConversions ?? [],
     ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>
 </script>

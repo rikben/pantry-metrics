@@ -54,6 +54,9 @@ declare(strict_types=1);
                 </td>
                 <td>
                     <strong><?= e($product['name']) ?></strong>
+                    <?php if ($product['owner_user_id'] === null): ?>
+                        <span class="shared-badge">Shared</span>
+                    <?php endif; ?>
                     <?php if ($product['brand']): ?>
                         <small><?= e($product['brand']) ?></small>
                     <?php endif; ?>

@@ -4,7 +4,17 @@ document.addEventListener('DOMContentLoaded', () => {
         input.addEventListener('wheel', () => input.blur(), { passive: true });
     });
 
-    const search = document.querySelector('#product-search');
+    const statsExpandButton = document.querySelector('#nutrition-stats-expand');
+
+    statsExpandButton?.addEventListener('click', () => {
+        const expanded = statsExpandButton.getAttribute('aria-expanded') === 'true';
+        document.querySelectorAll('[data-stat-extra]').forEach((card) => {
+            card.classList.toggle('is-hidden', expanded);
+        });
+        statsExpandButton.setAttribute('aria-expanded', String(!expanded));
+        statsExpandButton.textContent = expanded ? 'Show all metrics' : 'Show fewer metrics';
+    });
+
     const select = document.querySelector('#product-select');
     const packageButton = document.querySelector('#use-whole-package');
     const amount = document.querySelector('#ingredient-amount');
@@ -24,26 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'Whole package unavailable';
     };
 
-    if (search && select) {
-        const placeholder = select.options[0];
-        const options = Array.from(select.options).slice(1);
-
-        search.addEventListener('input', () => {
-            const query = search.value.trim().toLocaleLowerCase('nl-NL');
-            const selectedValue = select.value;
-
-            select.replaceChildren(placeholder);
-            options
-                .filter((option) => (option.dataset.search || '').includes(query))
-                .forEach((option) => select.appendChild(option));
-
-            if (Array.from(select.options).some((option) => option.value === selectedValue)) {
-                select.value = selectedValue;
-            }
-
-            updatePackageButton();
-        });
-
+    if (select) {
         select.addEventListener('change', updatePackageButton);
         updatePackageButton();
     }
@@ -56,6 +47,70 @@ document.addEventListener('DOMContentLoaded', () => {
         unit.value = option.dataset.packageUnit || 'g';
         amount.focus();
     });
+
+    /*
+     * When the chosen unit doesn't match the product's own nutrition
+     * unit, either apply a conversion remembered earlier for that
+     * product (see ProductUnitConversionRepository) or ask for one -
+     * mirrors the panel used when linking imported ingredients.
+     */
+    const conversionPanel = document.querySelector('#ingredient-conversion');
+    const conversionNote = document.querySelector('#ingredient-conversion-note');
+    const conversionLabel = document.querySelector('#ingredient-conversion-label');
+    const convertedAmountInput = document.querySelector('#ingredient-converted-amount');
+    const convertedUnitInput = document.querySelector('#ingredient-converted-unit');
+
+    const productConversionsRaw = (() => {
+        const configElement = document.querySelector('#recipe-page-config');
+        if (!configElement) return {};
+        try {
+            return JSON.parse(configElement.textContent).productConversions || {};
+        } catch {
+            return {};
+        }
+    })();
+
+    const updateIngredientConversion = () => {
+        if (!select || !unit || !conversionPanel) return false;
+
+        const option = select.selectedOptions[0];
+        const referenceUnit = option?.dataset.referenceUnit || '';
+        const sourceUnit = unit.value;
+        const sourceAmount = amount?.value || '1';
+
+        const required = select.value !== '' && referenceUnit !== '' && sourceUnit !== referenceUnit;
+        const saved = required
+            ? productConversionsRaw[select.value]?.[sourceUnit]
+            : null;
+
+        conversionPanel.classList.toggle('is-hidden', !required || Boolean(saved));
+
+        if (convertedUnitInput) {
+            convertedUnitInput.value = required ? referenceUnit : '';
+        }
+
+        if (conversionLabel) {
+            conversionLabel.textContent = `${sourceAmount} ${sourceUnit}`;
+        }
+
+        if (saved && conversionNote) {
+            const grams = (Number(sourceAmount) || 0) * Number(saved.reference_amount || 0);
+            conversionNote.textContent =
+                `Using a saved conversion: 1 ${sourceUnit} of this product = `
+                + `${Number(saved.reference_amount)} ${referenceUnit} (≈ ${grams.toFixed(2)} ${referenceUnit} total).`;
+        } else if (conversionNote) {
+            conversionNote.textContent = "Enter the equivalent amount in the product's nutrition unit.";
+        }
+
+        return required && !saved;
+    };
+
+    if (select && unit) {
+        select.addEventListener('change', updateIngredientConversion);
+        unit.addEventListener('change', updateIngredientConversion);
+        amount?.addEventListener('input', updateIngredientConversion);
+        updateIngredientConversion();
+    }
 
     const shoppingContainer = document.querySelector('#ah-shopping-products');
     const selectAll = document.querySelector('#shopping-select-all');
@@ -187,6 +242,11 @@ document.addEventListener('DOMContentLoaded', () => {
             protein_g: `${formatNumber(perServing.protein_g)} g`,
             carbohydrates_g: `${formatNumber(perServing.carbohydrates_g)} g`,
             fat_g: `${formatNumber(perServing.fat_g)} g`,
+            saturated_fat_g: `${formatNumber(perServing.saturated_fat_g)} g`,
+            sugars_g: `${formatNumber(perServing.sugars_g)} g`,
+            fiber_g: `${formatNumber(perServing.fiber_g)} g`,
+            salt_g: `${formatNumber(perServing.salt_g, 2)} g`,
+            energy_kj: formatNumber(perServing.energy_kj, 0),
         };
 
         Object.entries(values).forEach(([field, value]) => {
@@ -340,6 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectedProduct = select.value;
             ingredientForm.reset();
             select.value = selectedProduct;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
             updatePackageButton();
             amount.focus();
 

@@ -9,22 +9,35 @@ use App\Core\Database;
 
 final class RecipeRepository
 {
-    public function allForUser(int $userId, bool $archived = false): array
+    public function allForUser(int $userId, bool $archived = false, ?int $categoryId = null): array
     {
+        $categoryJoin = $categoryId !== null
+            ? 'INNER JOIN recipe_categories rc ON rc.recipe_id = r.id AND rc.category_id = :category_id'
+            : '';
+
         $statement = Database::connection()->prepare(
-            'SELECT r.*, COUNT(ri.id) AS ingredient_count,
+            "SELECT r.*, COUNT(DISTINCT ri.id) AS ingredient_count,
                 COALESCE(SUM((ri.amount / p.reference_amount) * p.energy_kcal), 0) AS total_kcal
              FROM recipes r
              LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id
              LEFT JOIN products p ON p.id = ri.product_id
-             WHERE r.owner_user_id = :user_id AND r.is_archived = :archived
+             {$categoryJoin}
+             WHERE (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)
+               AND r.is_archived = :archived
              GROUP BY r.id
-             ORDER BY r.updated_at DESC'
+             ORDER BY r.updated_at DESC"
         );
-        $statement->execute([
+
+        $parameters = [
             'user_id' => $userId,
             'archived' => $archived ? 1 : 0,
-        ]);
+        ];
+
+        if ($categoryId !== null) {
+            $parameters['category_id'] = $categoryId;
+        }
+
+        $statement->execute($parameters);
 
         return $statement->fetchAll();
     }
@@ -63,6 +76,45 @@ final class RecipeRepository
         return (int) Database::connection()->lastInsertId();
     }
 
+    /**
+     * AH-imported recipes join the shared catalog (owner_user_id is left
+     * NULL), so any signed-in user who imports the same recipe reuses
+     * this row instead of creating a private duplicate. Manually created
+     * recipes keep using create() above and stay private.
+     */
+    public function createShared(array $data): int
+    {
+        $statement = Database::connection()->prepare(
+            'INSERT INTO recipes (
+                owner_user_id,
+                name,
+                description,
+                instructions,
+                source_url,
+                source_identifier,
+                servings
+             ) VALUES (
+                NULL,
+                :name,
+                :description,
+                :instructions,
+                :source_url,
+                :source_identifier,
+                :servings
+             )'
+        );
+        $statement->execute([
+            'name' => $data['name'],
+            'description' => $data['description'] ?: null,
+            'instructions' => $data['instructions'] ?? null,
+            'source_url' => $data['source_url'] ?: null,
+            'source_identifier' => $data['source_identifier'] ?? null,
+            'servings' => $data['servings'],
+        ]);
+
+        return (int) Database::connection()->lastInsertId();
+    }
+
     public function update(
         int $recipeId,
         int $userId,
@@ -85,7 +137,7 @@ final class RecipeRepository
                 ),
                 servings = :servings
              WHERE id = :id
-               AND owner_user_id = :owner_user_id'
+               AND (owner_user_id = :owner_user_id OR owner_user_id IS NULL)'
         );
 
         $sourceIdentifier =
@@ -115,18 +167,22 @@ final class RecipeRepository
             'servings' => $data['servings'],
         ]);
     }
+    /**
+     * AH-imported recipes are shared catalog entries, so this lookup is
+     * intentionally global: whoever imports a given recipe first,
+     * everyone else reuses that same row instead of creating a
+     * duplicate (which would also violate the recipes.source_identifier
+     * unique key).
+     */
     public function findBySource(
-        int $userId,
         string $sourceIdentifier
     ): ?array {
         $statement = Database::connection()->prepare(
             'SELECT * FROM recipes
-             WHERE owner_user_id = :user_id
-               AND source_identifier = :source_identifier
+             WHERE source_identifier = :source_identifier
              LIMIT 1'
         );
         $statement->execute([
-            'user_id' => $userId,
             'source_identifier' => $sourceIdentifier,
         ]);
 
@@ -135,7 +191,6 @@ final class RecipeRepository
 
     public function updateImported(
         int $recipeId,
-        int $userId,
         array $data
     ): void {
         $statement = Database::connection()->prepare(
@@ -147,13 +202,11 @@ final class RecipeRepository
                 source_identifier = :source_identifier,
                 servings = :servings,
                 is_archived = 0
-             WHERE id = :id
-               AND owner_user_id = :owner_user_id'
+             WHERE id = :id'
         );
 
         $statement->execute([
             'id' => $recipeId,
-            'owner_user_id' => $userId,
             'name' => $data['name'],
             'description' => $data['description'] ?: null,
             'instructions' => $data['instructions'] ?: null,
@@ -171,7 +224,8 @@ final class RecipeRepository
         $statement = Database::connection()->prepare(
             'UPDATE recipes
              SET image_path = :image_path, image_source_url = :image_source_url
-             WHERE id = :id AND owner_user_id = :owner_user_id'
+             WHERE id = :id
+               AND (owner_user_id = :owner_user_id OR owner_user_id IS NULL)'
         );
         $statement->execute([
             'id' => $recipeId,
@@ -185,7 +239,8 @@ final class RecipeRepository
     {
         $statement = Database::connection()->prepare(
             'UPDATE recipes SET is_archived = :value
-             WHERE id = :id AND owner_user_id = :owner_user_id'
+             WHERE id = :id
+               AND (owner_user_id = :owner_user_id OR owner_user_id IS NULL)'
         );
         $statement->execute([
             'id' => $recipeId,
@@ -197,7 +252,10 @@ final class RecipeRepository
     public function findForUser(int $recipeId, int $userId): ?array
     {
         $statement = Database::connection()->prepare(
-            'SELECT * FROM recipes WHERE id = :id AND owner_user_id = :user_id LIMIT 1'
+            'SELECT * FROM recipes
+             WHERE id = :id
+               AND (owner_user_id = :user_id OR owner_user_id IS NULL)
+             LIMIT 1'
         );
         $statement->execute(['id' => $recipeId, 'user_id' => $userId]);
 
@@ -256,7 +314,7 @@ final class RecipeRepository
              SET ri.amount = :amount, ri.unit = :unit, ri.notes = :notes
              WHERE ri.id = :ingredient_id
                AND ri.recipe_id = :recipe_id
-               AND r.owner_user_id = :user_id'
+               AND (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)'
         );
         $statement->execute([
             'ingredient_id' => $ingredientId,
@@ -282,7 +340,7 @@ final class RecipeRepository
              INNER JOIN recipes r ON r.id = ri.recipe_id
              WHERE ri.id = :ingredient_id
                AND ri.recipe_id = :recipe_id
-               AND r.owner_user_id = :user_id
+               AND (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)
              LIMIT 1'
         );
         $existsStatement->execute([
@@ -301,7 +359,7 @@ final class RecipeRepository
              INNER JOIN recipes r ON r.id = ri.recipe_id
              WHERE ri.id = :ingredient_id
                AND ri.recipe_id = :recipe_id
-               AND r.owner_user_id = :user_id'
+               AND (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)'
         );
         $statement->execute([
             'ingredient_id' => $ingredientId,
