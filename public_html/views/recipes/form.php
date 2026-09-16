@@ -56,6 +56,25 @@ e($recipe[$field] ?? $default);
         <small>Keep one numbered step per paragraph.</small>
     </label>
 
+    <?php if (!empty($categories)): ?>
+        <div class="full-width">
+            <p class="eyebrow">Categories</p>
+            <div class="category-checkboxes">
+                <?php foreach ($categories as $category): ?>
+                    <label class="checkbox-label">
+                        <input
+                                type="checkbox"
+                                name="category_ids[]"
+                                value="<?= e($category['id']) ?>"
+                                <?= in_array((int) $category['id'], $selectedCategoryIds ?? [], true) ? 'checked' : '' ?>
+                        >
+                        <?= e($category['name']) ?>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <div class="full-width actions">
         <button class="button" type="submit">Save recipe</button>
         <a class="button button-secondary" href="<?= $recipe ? '/recipes/' . e($recipe['id']) : '/recipes' ?>">Cancel</a>

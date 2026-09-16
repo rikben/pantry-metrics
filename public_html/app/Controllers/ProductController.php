@@ -8,6 +8,7 @@ namespace App\Controllers;
 use App\Auth\AuthServiceInterface;
 use App\Core\Container;
 use App\Repositories\ProductRepository;
+use App\Repositories\ProductUnitConversionRepository;
 use App\Services\RemoteImageService;
 
 final class ProductController
@@ -50,8 +51,16 @@ final class ProductController
             );
         }
 
+        /*
+         * The inline "create a new product" panel on the recipe page
+         * creates a product without navigating away, so it asks for JSON
+         * back instead of the usual redirect.
+         */
+        if ($this->wantsJson()) {
+            $this->json(['product' => $repository->findForUser($productId, (int) $user['id'])]);
+        }
+
         $returnTo = $this->safeReturnTo((string) ($_POST['return_to'] ?? ''));
-        $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
         $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
         redirect($returnTo !== ''
             ? $returnTo
@@ -84,7 +93,54 @@ final class ProductController
             'product' => $product,
             'action' => "/products/{$id}/update",
             'returnTo' => '',
+            'conversions' => (new ProductUnitConversionRepository())->forProduct((int) $id),
         ]);
+    }
+
+    public function addConversion(string $id): void
+    {
+        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $product = (new ProductRepository())->findForUser((int) $id, (int) $user['id']);
+
+        if (!$product) {
+            $this->jsonOrExit(['error' => 'Product not found.'], 404);
+        }
+
+        $unit = trim((string) ($_POST['unit'] ?? ''));
+        $referenceAmount = (float) ($_POST['reference_amount'] ?? 0);
+        $allowedUnits = ['kg', 'mg', 'l', 'cl', 'dl', 'tbsp', 'tsp'];
+
+        if (!in_array($unit, $allowedUnits, true) || $referenceAmount <= 0) {
+            $this->jsonOrExit(['error' => 'Enter a unit and a positive amount.'], 422);
+        }
+
+        $repository = new ProductUnitConversionRepository();
+        $repository->remember((int) $id, $unit, $referenceAmount);
+
+        if ($this->wantsJson()) {
+            $this->json(['conversions' => $repository->forProduct((int) $id)]);
+        }
+
+        redirect("/products/{$id}/edit");
+    }
+
+    public function deleteConversion(string $id, string $unit): void
+    {
+        $user = Container::instance()->get(AuthServiceInterface::class)->user();
+        $product = (new ProductRepository())->findForUser((int) $id, (int) $user['id']);
+
+        if (!$product) {
+            $this->jsonOrExit(['error' => 'Product not found.'], 404);
+        }
+
+        $repository = new ProductUnitConversionRepository();
+        $repository->forget((int) $id, $unit);
+
+        if ($this->wantsJson()) {
+            $this->json(['conversions' => $repository->forProduct((int) $id)]);
+        }
+
+        redirect("/products/{$id}/edit");
     }
 
     public function update(string $id): void
@@ -142,8 +198,7 @@ final class ProductController
         }
 
         if ($data['name'] === '') {
-            http_response_code(422);
-            exit('Product name is required.');
+            $this->jsonOrExit(['error' => 'Product name is required.'], 422);
         }
 
         if ($data['package_amount'] <= 0) {
@@ -156,5 +211,31 @@ final class ProductController
     private function safeReturnTo(string $path): string
     {
         return preg_match('#^/recipes/\d+$#', $path) === 1 ? $path : '';
+    }
+
+    private function wantsJson(): bool
+    {
+        return str_contains(
+            strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? '')),
+            'application/json'
+        ) || strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+    }
+
+    private function json(array $payload, int $status = 200): never
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload, JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    private function jsonOrExit(array $payload, int $status): never
+    {
+        if ($this->wantsJson()) {
+            $this->json($payload, $status);
+        }
+
+        http_response_code($status);
+        exit((string) ($payload['error'] ?? 'Request failed.'));
     }
 }

@@ -43,6 +43,8 @@ $router->get('/products/{id}/edit', [ProductController::class, 'edit']);
 $router->post('/products/{id}/update', [ProductController::class, 'update']);
 $router->post('/products/{id}/archive', [ProductController::class, 'archive']);
 $router->post('/products/{id}/restore', [ProductController::class, 'restore']);
+$router->post('/products/{id}/conversions', [ProductController::class, 'addConversion']);
+$router->post('/products/{id}/conversions/{unit}/delete', [ProductController::class, 'deleteConversion']);
 
 $router->get('/products/import', [ProductImportController::class, 'create']);
 $router->post('/products/import/preview', [ProductImportController::class, 'preview']);

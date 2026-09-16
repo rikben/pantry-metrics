@@ -14,6 +14,17 @@ declare(strict_types=1);
     </div>
 </div>
 
+<?php if ($existing): ?>
+    <div class="alert">
+        <strong>Existing recipe</strong>
+        <p>
+            Someone already imported this recipe as
+            "<?= e($existing['name']) ?>". Saving will update that
+            shared recipe instead of creating a duplicate.
+        </p>
+    </div>
+<?php endif; ?>
+
 <form
     class="card form-grid"
     method="post"

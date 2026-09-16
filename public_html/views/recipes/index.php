@@ -19,6 +19,25 @@ declare(strict_types=1);
     </div>
 </div>
 
+<?php if (!empty($categories)): ?>
+    <div class="category-filters">
+        <a
+                class="category-filter <?= ($selectedCategoryId ?? 0) === 0 ? 'is-active' : '' ?>"
+                href="?<?= $archived ? 'archived=1' : '' ?>"
+        >
+            All
+        </a>
+        <?php foreach ($categories as $category): ?>
+            <a
+                    class="category-filter <?= ($selectedCategoryId ?? 0) === (int) $category['id'] ? 'is-active' : '' ?>"
+                    href="?<?= $archived ? 'archived=1&' : '' ?>category=<?= e($category['id']) ?>"
+            >
+                <?= e($category['name']) ?>
+            </a>
+        <?php endforeach; ?>
+    </div>
+<?php endif; ?>
+
 <?php if ($recipes === []): ?>
     <div class="empty-state">No recipes found.</div>
 <?php else: ?>
@@ -31,6 +50,12 @@ declare(strict_types=1);
                         <?= e($recipe['servings']) ?> servings ·
                         <?= e($recipe['ingredient_count']) ?> ingredients ·
                         <?= e(round((float) $recipe['total_kcal'] / max((float) $recipe['servings'], 0.01))) ?> kcal/serving
+                        <?php if (!empty($recipeCategories[(int) $recipe['id']])): ?>
+                            · <?= e(implode(', ', array_column($recipeCategories[(int) $recipe['id']], 'name'))) ?>
+                        <?php endif; ?>
+                        <?php if ($recipe['owner_user_id'] === null): ?>
+                            <span class="shared-badge">Shared</span>
+                        <?php endif; ?>
                     </span>
                 </a>
                 <div class="table-actions">

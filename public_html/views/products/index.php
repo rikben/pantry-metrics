@@ -19,6 +19,16 @@ declare(strict_types=1);
     </div>
 </div>
 
+<div class="table-filter">
+    <input
+            type="search"
+            id="product-filter"
+            placeholder="Filter by name, brand or AH ID…"
+            aria-label="Filter products"
+    >
+    <span id="product-filter-count" aria-live="polite"></span>
+</div>
+
 <div class="table-wrap">
     <table>
         <thead>
@@ -33,9 +43,16 @@ declare(strict_types=1);
             <th>Actions</th>
         </tr>
         </thead>
-        <tbody>
+        <tbody id="products-table-body">
         <?php foreach ($products as $product): ?>
-            <tr>
+            <?php
+            $productSearchText = mb_strtolower(trim(implode(' ', array_filter([
+                    $product['name'],
+                    $product['brand'],
+                    $product['source_identifier'],
+            ]))));
+            ?>
+            <tr data-search="<?= e($productSearchText) ?>">
                 <td>
                     <?php if (!empty($product['image_path'])): ?>
                         <img
@@ -54,6 +71,9 @@ declare(strict_types=1);
                 </td>
                 <td>
                     <strong><?= e($product['name']) ?></strong>
+                    <?php if ($product['owner_user_id'] === null): ?>
+                        <span class="shared-badge">Shared</span>
+                    <?php endif; ?>
                     <?php if ($product['brand']): ?>
                         <small><?= e($product['brand']) ?></small>
                     <?php endif; ?>

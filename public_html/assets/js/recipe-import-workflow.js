@@ -260,6 +260,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 )} g`,
             fat_g:
                 `${formatNumber(nutrition.per_serving.fat_g)} g`,
+            saturated_fat_g:
+                `${formatNumber(nutrition.per_serving.saturated_fat_g)} g`,
+            sugars_g:
+                `${formatNumber(nutrition.per_serving.sugars_g)} g`,
+            fiber_g:
+                `${formatNumber(nutrition.per_serving.fiber_g)} g`,
+            salt_g:
+                `${formatNumber(nutrition.per_serving.salt_g, 2)} g`,
+            energy_kj: formatNumber(nutrition.per_serving.energy_kj, 0),
         };
 
         Object.entries(values).forEach(([key, value]) => {
@@ -294,10 +303,17 @@ document.addEventListener('DOMContentLoaded', () => {
         card.classList.toggle('source-ingredient-busy', busy);
     };
 
+    const productConversions = (() => {
+        try {
+            return config.productConversions || {};
+        } catch {
+            return {};
+        }
+    })();
+
     const updateConversion = (card) => {
-        const option =
-            card.querySelector('.source-product-select')
-                ?.selectedOptions[0];
+        const select = card.querySelector('.source-product-select');
+        const option = select?.selectedOptions[0];
         const referenceUnit =
             option?.dataset.referenceUnit || '';
         const sourceUnit =
@@ -309,18 +325,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const conversion =
             card.querySelector('.source-conversion');
+        const convertedAmount =
+            card.querySelector('.converted-amount');
         const convertedUnit =
             card.querySelector('.converted-unit');
         const label =
             card.querySelector('.conversion-source-label');
+        const note =
+            card.querySelector('.source-conversion-note');
 
         const required =
-            referenceUnit !== ''
+            select?.value
+            && referenceUnit !== ''
             && sourceUnit !== referenceUnit;
+
+        const saved = required
+            ? productConversions[select.value]?.[sourceUnit]
+            : null;
 
         conversion?.classList.toggle(
             'is-hidden',
-            !required
+            !required || Boolean(saved)
         );
 
         if (convertedUnit) {
@@ -333,7 +358,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 `${sourceAmount} ${sourceUnit}`;
         }
 
-        return required;
+        if (saved && note) {
+            const grams =
+                (Number(sourceAmount) || 0)
+                * Number(saved.reference_amount || 0);
+            note.textContent =
+                `Using a saved conversion: 1 ${sourceUnit} of this `
+                + `product = ${Number(saved.reference_amount)} `
+                + `${referenceUnit} (≈ ${grams.toFixed(2)} `
+                + `${referenceUnit} total).`;
+            note.classList.remove('is-hidden');
+            if (convertedAmount) convertedAmount.value = '';
+        } else if (note) {
+            note.classList.add('is-hidden');
+        }
+
+        return required && !saved;
     };
 
     const showLinkedProduct = (card) => {
@@ -394,6 +434,10 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }
 
+        const rememberConversion =
+            card.querySelector('.source-remember-conversion')
+                ?.checked ?? true;
+
         const payload = await post(
             `/recipes/${config.recipeId}`
             + `/source-ingredients/${id}/link`,
@@ -413,6 +457,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     conversionRequired
                         ? convertedUnit
                         : '',
+                remember_conversion:
+                    rememberConversion ? '1' : '0',
             }
         );
 

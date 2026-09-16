@@ -4,7 +4,42 @@ document.addEventListener('DOMContentLoaded', () => {
         input.addEventListener('wheel', () => input.blur(), { passive: true });
     });
 
-    const search = document.querySelector('#product-search');
+    const statsExpandButton = document.querySelector('#nutrition-stats-expand');
+
+    statsExpandButton?.addEventListener('click', () => {
+        const expanded = statsExpandButton.getAttribute('aria-expanded') === 'true';
+        document.querySelectorAll('[data-stat-extra]').forEach((card) => {
+            card.classList.toggle('is-hidden', expanded);
+        });
+        statsExpandButton.setAttribute('aria-expanded', String(!expanded));
+        statsExpandButton.textContent = expanded ? 'Show all metrics' : 'Show fewer metrics';
+    });
+
+    const productFilterInput = document.querySelector('#product-filter');
+    const productFilterCount = document.querySelector('#product-filter-count');
+    const productRows = Array.from(document.querySelectorAll('#products-table-body tr[data-search]'));
+
+    if (productFilterInput && productRows.length) {
+        const applyProductFilter = () => {
+            const query = productFilterInput.value.trim().toLocaleLowerCase('nl-NL');
+            let visibleCount = 0;
+
+            productRows.forEach((row) => {
+                const matches = query === '' || row.dataset.search.includes(query);
+                row.classList.toggle('is-hidden', !matches);
+                if (matches) visibleCount += 1;
+            });
+
+            if (productFilterCount) {
+                productFilterCount.textContent = query === ''
+                    ? ''
+                    : `${visibleCount} of ${productRows.length} shown`;
+            }
+        };
+
+        productFilterInput.addEventListener('input', applyProductFilter);
+    }
+
     const select = document.querySelector('#product-select');
     const packageButton = document.querySelector('#use-whole-package');
     const amount = document.querySelector('#ingredient-amount');
@@ -24,26 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'Whole package unavailable';
     };
 
-    if (search && select) {
-        const placeholder = select.options[0];
-        const options = Array.from(select.options).slice(1);
-
-        search.addEventListener('input', () => {
-            const query = search.value.trim().toLocaleLowerCase('nl-NL');
-            const selectedValue = select.value;
-
-            select.replaceChildren(placeholder);
-            options
-                .filter((option) => (option.dataset.search || '').includes(query))
-                .forEach((option) => select.appendChild(option));
-
-            if (Array.from(select.options).some((option) => option.value === selectedValue)) {
-                select.value = selectedValue;
-            }
-
-            updatePackageButton();
-        });
-
+    if (select) {
         select.addEventListener('change', updatePackageButton);
         updatePackageButton();
     }
@@ -56,6 +72,90 @@ document.addEventListener('DOMContentLoaded', () => {
         unit.value = option.dataset.packageUnit || 'g';
         amount.focus();
     });
+
+    /*
+     * When the chosen unit doesn't match the product's own nutrition
+     * unit, either apply a conversion remembered earlier for that
+     * product (see ProductUnitConversionRepository) or ask for one -
+     * mirrors the panel used when linking imported ingredients.
+     */
+    const conversionPanel = document.querySelector('#ingredient-conversion');
+    const conversionNote = document.querySelector('#ingredient-conversion-note');
+    const conversionLabel = document.querySelector('#ingredient-conversion-label');
+    const convertedAmountInput = document.querySelector('#ingredient-converted-amount');
+    const convertedUnitInput = document.querySelector('#ingredient-converted-unit');
+
+    const productConversionsRaw = (() => {
+        const configElement = document.querySelector('#recipe-page-config');
+        if (!configElement) return {};
+        try {
+            return JSON.parse(configElement.textContent).productConversions || {};
+        } catch {
+            return {};
+        }
+    })();
+
+    const updateIngredientConversion = () => {
+        if (!select || !unit || !conversionPanel) return false;
+
+        const option = select.selectedOptions[0];
+        const referenceUnit = option?.dataset.referenceUnit || '';
+        const sourceUnit = unit.value;
+        const sourceAmount = amount?.value || '1';
+
+        const required = select.value !== '' && referenceUnit !== '' && sourceUnit !== referenceUnit;
+        const saved = required
+            ? productConversionsRaw[select.value]?.[sourceUnit]
+            : null;
+
+        conversionPanel.classList.toggle('is-hidden', !required || Boolean(saved));
+
+        if (convertedUnitInput) {
+            convertedUnitInput.value = required ? referenceUnit : '';
+        }
+
+        if (conversionLabel) {
+            conversionLabel.textContent = `${sourceAmount} ${sourceUnit}`;
+        }
+
+        if (saved && conversionNote) {
+            const grams = (Number(sourceAmount) || 0) * Number(saved.reference_amount || 0);
+            conversionNote.textContent =
+                `Using a saved conversion: 1 ${sourceUnit} of this product = `
+                + `${Number(saved.reference_amount)} ${referenceUnit} (≈ ${grams.toFixed(2)} ${referenceUnit} total).`;
+        } else if (conversionNote) {
+            conversionNote.textContent = "Enter the equivalent amount in the product's nutrition unit.";
+        }
+
+        return required && !saved;
+    };
+
+    if (select && unit) {
+        select.addEventListener('change', updateIngredientConversion);
+        select.addEventListener('change', () => renderProductConversions());
+
+        // A genuine product pick (click or keyboard Enter in the
+        // combobox) moves focus straight to the amount field, so typing
+        // a search term, arrowing to a result and hitting Enter can flow
+        // directly into entering the quantity without touching the mouse.
+        select.addEventListener('combobox:pick', () => {
+            amount?.focus();
+            amount?.select();
+        });
+
+        // Changing the unit is a deliberate action too: if that now
+        // requires a conversion that isn't saved yet, send focus to the
+        // conversion field instead of leaving the user to find it.
+        unit.addEventListener('change', () => {
+            const needsConversion = updateIngredientConversion();
+            if (needsConversion) {
+                convertedAmountInput?.focus();
+            }
+        });
+
+        amount?.addEventListener('input', updateIngredientConversion);
+        updateIngredientConversion();
+    }
 
     const shoppingContainer = document.querySelector('#ah-shopping-products');
     const selectAll = document.querySelector('#shopping-select-all');
@@ -148,6 +248,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyState = document.querySelector('#ingredients-empty');
     const message = document.querySelector('#ingredient-message');
 
+    let nutritionState = config.nutrition || { per_serving: {}, per_100g: null, weight_is_approximate: false };
+    let nutritionMode = 'serving';
+    const nutritionModeToggle = document.querySelector('#nutrition-mode-toggle');
+    const nutritionModeNote = document.querySelector('#nutrition-mode-note');
+
     const request = async (url, formData) => {
         const response = await fetch(url, {
             method: 'POST',
@@ -187,6 +292,11 @@ document.addEventListener('DOMContentLoaded', () => {
             protein_g: `${formatNumber(perServing.protein_g)} g`,
             carbohydrates_g: `${formatNumber(perServing.carbohydrates_g)} g`,
             fat_g: `${formatNumber(perServing.fat_g)} g`,
+            saturated_fat_g: `${formatNumber(perServing.saturated_fat_g)} g`,
+            sugars_g: `${formatNumber(perServing.sugars_g)} g`,
+            fiber_g: `${formatNumber(perServing.fiber_g)} g`,
+            salt_g: `${formatNumber(perServing.salt_g, 2)} g`,
+            energy_kj: formatNumber(perServing.energy_kj, 0),
         };
 
         Object.entries(values).forEach(([field, value]) => {
@@ -194,6 +304,267 @@ document.addEventListener('DOMContentLoaded', () => {
             if (element) element.textContent = value;
         });
     };
+
+    const applyNutritionMode = () => {
+        const values = (nutritionMode === '100g' && nutritionState.per_100g)
+            ? nutritionState.per_100g
+            : nutritionState.per_serving;
+        renderStats(values);
+
+        if (nutritionModeNote) {
+            nutritionModeNote.classList.toggle(
+                'is-hidden',
+                !(nutritionMode === '100g' && nutritionState.weight_is_approximate)
+            );
+        }
+    };
+
+    const syncNutritionModeAvailability = () => {
+        const per100gButton = nutritionModeToggle?.querySelector('[data-mode="100g"]');
+        if (!per100gButton) return;
+
+        const available = Boolean(nutritionState.per_100g);
+        per100gButton.disabled = !available;
+        per100gButton.title = available
+            ? ''
+            : 'Add ingredients measured in g or ml to enable this view';
+
+        if (!available && nutritionMode === '100g') {
+            nutritionMode = 'serving';
+            nutritionModeToggle.querySelectorAll('.nutrition-mode-button').forEach((button) => {
+                button.classList.toggle('is-active', button.dataset.mode === 'serving');
+            });
+        }
+    };
+
+    nutritionModeToggle?.addEventListener('click', (event) => {
+        const button = event.target.closest('.nutrition-mode-button');
+        if (!button || button.disabled) return;
+
+        nutritionModeToggle.querySelectorAll('.nutrition-mode-button').forEach((otherButton) => {
+            otherButton.classList.toggle('is-active', otherButton === button);
+        });
+
+        nutritionMode = button.dataset.mode === '100g' ? '100g' : 'serving';
+        applyNutritionMode();
+    });
+
+    /*
+     * Saved unit conversions for the currently selected product, managed
+     * right here on the recipe page (add/remove) instead of forcing a
+     * trip to that product's own edit page. Mirrors the "Culinary units"
+     * panel on /products/{id}/edit, but scoped to whichever product is
+     * picked in the add-ingredient combobox.
+     */
+    const conversionsManager = document.querySelector('#product-conversions-manager');
+    const conversionsList = document.querySelector('#product-conversions-list');
+    const conversionsProductName = document.querySelector('#product-conversions-product-name');
+    const conversionsUnitSelect = document.querySelector('#product-conversions-unit');
+    const conversionsAmountInput = document.querySelector('#product-conversions-amount');
+    const conversionsRefUnitLabel = document.querySelector('#product-conversions-reference-unit-label');
+    const conversionsAddButton = document.querySelector('#product-conversions-add');
+
+    const applyConversionsPayload = (productId, conversions) => {
+        productConversionsRaw[productId] = {};
+        (conversions || []).forEach((conversion) => {
+            productConversionsRaw[productId][conversion.unit] = conversion;
+        });
+    };
+
+    function renderProductConversions() {
+        if (!select || !conversionsManager) return;
+
+        const option = select.selectedOptions[0];
+
+        if (!select.value || !option) {
+            conversionsManager.classList.add('is-hidden');
+            return;
+        }
+
+        conversionsManager.classList.remove('is-hidden');
+
+        if (conversionsProductName) {
+            conversionsProductName.textContent = `for ${option.dataset.name || ''}`;
+        }
+
+        const referenceUnit = option.dataset.referenceUnit || 'g';
+        if (conversionsRefUnitLabel) conversionsRefUnitLabel.textContent = referenceUnit;
+
+        const conversions = productConversionsRaw[select.value] || {};
+        const units = Object.keys(conversions);
+
+        conversionsList.replaceChildren();
+
+        if (units.length === 0) {
+            const empty = document.createElement('li');
+            empty.className = 'conversions-empty';
+            empty.textContent = 'No conversions saved yet for this product.';
+            conversionsList.appendChild(empty);
+            return;
+        }
+
+        units.sort().forEach((conversionUnit) => {
+            const conversion = conversions[conversionUnit];
+            const item = document.createElement('li');
+
+            const text = document.createElement('span');
+            text.textContent = `1 ${conversionUnit} = ${Number(conversion.reference_amount)} ${referenceUnit}`;
+
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'link-button danger-link';
+            removeButton.textContent = 'Remove';
+            removeButton.addEventListener('click', () => deleteProductConversion(conversionUnit));
+
+            item.append(text, removeButton);
+            conversionsList.appendChild(item);
+        });
+    }
+
+    const deleteProductConversion = async (conversionUnit) => {
+        const productId = select.value;
+        if (!productId) return;
+
+        const formData = new FormData();
+        formData.set('_csrf', config.csrfToken);
+
+        try {
+            const payload = await request(
+                `/products/${productId}/conversions/${encodeURIComponent(conversionUnit)}/delete`,
+                formData
+            );
+            applyConversionsPayload(productId, payload.conversions);
+            renderProductConversions();
+            updateIngredientConversion();
+            showMessage('Conversion removed.');
+        } catch (error) {
+            showMessage(error.message, 'error');
+        }
+    };
+
+    conversionsAddButton?.addEventListener('click', async () => {
+        const productId = select.value;
+        if (!productId) return;
+
+        const unitValue = conversionsUnitSelect.value;
+        const amountValue = Number(conversionsAmountInput.value);
+
+        if (!amountValue || amountValue <= 0) {
+            showMessage('Enter a positive amount for the conversion.', 'error');
+            conversionsAmountInput.focus();
+            return;
+        }
+
+        const formData = new FormData();
+        formData.set('_csrf', config.csrfToken);
+        formData.set('unit', unitValue);
+        formData.set('reference_amount', String(amountValue));
+
+        try {
+            const payload = await request(`/products/${productId}/conversions`, formData);
+            applyConversionsPayload(productId, payload.conversions);
+            renderProductConversions();
+            updateIngredientConversion();
+            const referenceUnit = conversionsRefUnitLabel?.textContent || '';
+            showMessage(`Saved: 1 ${unitValue} = ${amountValue} ${referenceUnit}.`);
+            conversionsAmountInput.value = '';
+        } catch (error) {
+            showMessage(error.message, 'error');
+        }
+    });
+
+    /*
+     * Inline "create a new product" panel, opened from the combobox's
+     * trailing "+ Create ..." row when a search finds nothing useful.
+     * Posts straight to /products and, on success, adds the new product
+     * as an option in the picker and selects it - no page navigation.
+     */
+    const inlineCreatePanel = document.querySelector('#inline-product-create');
+    const inlineCreateMessage = document.querySelector('#inline-product-create-message');
+    const NEW_PRODUCT_FIELDS = [
+        'energy_kj', 'energy_kcal', 'fat_g', 'saturated_fat_g',
+        'carbohydrates_g', 'sugars_g', 'fiber_g', 'protein_g', 'salt_g',
+    ];
+
+    const showInlineCreateMessage = (text, type = 'error') => {
+        if (!inlineCreateMessage) return;
+        inlineCreateMessage.textContent = text;
+        inlineCreateMessage.className = `ajax-message ajax-message-${type}`;
+        inlineCreateMessage.classList.remove('is-hidden');
+    };
+
+    const addProductOption = (product) => {
+        const option = document.createElement('option');
+        option.value = product.id;
+        option.dataset.name = product.name;
+        option.dataset.meta = [product.brand, product.package_description].filter(Boolean).join(' · ');
+        option.dataset.search = [product.name, product.brand].filter(Boolean).join(' ').toLocaleLowerCase('nl-NL');
+        option.dataset.image = product.image_path || '';
+        option.dataset.referenceUnit = product.reference_unit;
+        option.dataset.packageAmount = product.package_amount || '';
+        option.dataset.packageUnit = product.package_unit || '';
+        option.textContent = product.brand ? `${product.name} · ${product.brand}` : product.name;
+        select.appendChild(option);
+    };
+
+    select?.addEventListener('combobox:create-requested', (event) => {
+        if (!inlineCreatePanel) return;
+
+        inlineCreatePanel.classList.remove('is-hidden');
+        inlineCreateMessage?.classList.add('is-hidden');
+
+        const nameInput = document.querySelector('#new-product-name');
+        if (nameInput) {
+            nameInput.value = event.detail?.query || '';
+            nameInput.focus();
+        }
+    });
+
+    document.querySelector('#inline-product-create-cancel')?.addEventListener('click', () => {
+        inlineCreatePanel?.classList.add('is-hidden');
+    });
+
+    document.querySelector('#inline-product-create-save')?.addEventListener('click', async () => {
+        const nameInput = document.querySelector('#new-product-name');
+        const name = nameInput?.value.trim() || '';
+
+        if (!name) {
+            showInlineCreateMessage('Product name is required.');
+            nameInput?.focus();
+            return;
+        }
+
+        const formData = new FormData();
+        formData.set('_csrf', config.csrfToken);
+        formData.set('name', name);
+        formData.set('brand', document.querySelector('#new-product-brand')?.value.trim() || '');
+        formData.set('reference_amount', document.querySelector('#new-product-reference-amount')?.value || '100');
+        formData.set('reference_unit', document.querySelector('#new-product-reference-unit')?.value || 'g');
+        formData.set('package_amount', '0');
+        formData.set('package_unit', '');
+        formData.set('package_description', '');
+        formData.set('source_url', '');
+
+        NEW_PRODUCT_FIELDS.forEach((field) => {
+            const fieldInput = document.querySelector(`#new-product-${field.replace(/_/g, '-')}`);
+            formData.set(field, fieldInput?.value || '0');
+        });
+
+        try {
+            const payload = await request('/products', formData);
+            const product = payload.product;
+
+            addProductOption(product);
+            select.value = String(product.id);
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+
+            inlineCreatePanel?.classList.add('is-hidden');
+            amount?.focus();
+            showMessage(`"${product.name}" created and selected.`);
+        } catch (error) {
+            showInlineCreateMessage(error.message);
+        }
+    });
 
     const svgElement = (pathData) => {
         const namespace = 'http://www.w3.org/2000/svg';
@@ -319,7 +690,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasIngredients = payload.nutrition.ingredients.length > 0;
         tableWrap.classList.toggle('is-hidden', !hasIngredients);
         emptyState.classList.toggle('is-hidden', hasIngredients);
-        renderStats(payload.nutrition.per_serving);
+
+        nutritionState = payload.nutrition;
+        syncNutritionModeAvailability();
+        applyNutritionMode();
     };
 
     ingredientForm.addEventListener('submit', async (event) => {
@@ -337,13 +711,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderPayload(payload);
 
-            const selectedProduct = select.value;
+            // Reset to a blank product search rather than keeping the
+            // just-added product selected, so the whole add flow - type,
+            // pick, enter amount, submit - can repeat immediately for a
+            // different ingredient without touching the mouse.
             ingredientForm.reset();
-            select.value = selectedProduct;
+            select.value = '';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
             updatePackageButton();
-            amount.focus();
 
-            showMessage('Ingredient added. You can add the next one.');
+            const productSearchInput = select.id
+                ? document.querySelector(`#${CSS.escape(select.id)}-search`)
+                : null;
+            (productSearchInput || amount)?.focus();
+
+            showMessage('Ingredient added. Search for the next one.');
         } catch (error) {
             showMessage(error.message, 'error');
         } finally {
@@ -405,6 +787,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    renderProductConversions();
 
     if (select?.value) {
         updatePackageButton();

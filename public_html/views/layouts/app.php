@@ -19,7 +19,12 @@ $app = config('app');
     <link rel="stylesheet" href="/assets/css/source-concept-fix.css">
     <link rel="stylesheet" href="/assets/css/recipe-page-content-fix.css">
     <link rel="stylesheet" href="/assets/css/source-unit-conversion.css">
+    <link rel="stylesheet" href="/assets/css/product-combobox.css">
+    <link rel="stylesheet" href="/assets/css/nutrition-detail.css">
+    <link rel="stylesheet" href="/assets/css/recipe-categories.css">
+    <link rel="stylesheet" href="/assets/css/recipe-quick-actions.css">
     <link rel="stylesheet" href="/assets/css/auth.css">
+    <script src="/assets/js/product-combobox.js" defer></script>
 </head>
 <body>
 <header class="site-header">
@@ -68,6 +73,5 @@ $app = config('app');
 </footer>
     <script defer src="/assets/js/recipe-import-workflow.js"></script>
     <script defer src="/assets/js/source-return-flow.js"></script>
-    <script defer src="/assets/js/source-conversion-ui.js"></script>
 </body>
 </html>

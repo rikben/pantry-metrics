@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Core\Database;
+use App\Services\UnitConverter;
 use PDO;
 
 final class RecipeSourceIngredientRepository
@@ -19,7 +20,7 @@ final class RecipeSourceIngredientRepository
              FROM recipe_source_ingredients rsi
              INNER JOIN recipes r ON r.id = rsi.recipe_id
              WHERE rsi.recipe_id = :recipe_id
-               AND r.owner_user_id = :user_id
+               AND (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)
              LIMIT 1'
         );
         $statement->execute([
@@ -80,7 +81,7 @@ final class RecipeSourceIngredientRepository
              LEFT JOIN products p
                 ON p.id = rsi.linked_product_id
              WHERE rsi.recipe_id = :recipe_id
-               AND r.owner_user_id = :user_id
+               AND (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)
              ORDER BY rsi.position, rsi.id'
         );
         $statement->execute([
@@ -99,7 +100,8 @@ final class RecipeSourceIngredientRepository
         float $sourceAmount,
         string $sourceUnit,
         ?float $convertedAmount = null,
-        ?string $convertedUnit = null
+        ?string $convertedUnit = null,
+        bool $rememberConversion = true
     ): bool {
         $connection = Database::connection();
         $connection->beginTransaction();
@@ -111,7 +113,7 @@ final class RecipeSourceIngredientRepository
                  INNER JOIN recipes r ON r.id = rsi.recipe_id
                  WHERE rsi.id = :source_id
                    AND rsi.recipe_id = :recipe_id
-                   AND r.owner_user_id = :user_id
+                   AND (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)
                  FOR UPDATE'
             );
             $sourceStatement->execute([
@@ -146,27 +148,24 @@ final class RecipeSourceIngredientRepository
             }
 
             $referenceUnit = (string) $product['reference_unit'];
-            $recipeAmount = $sourceAmount;
-            $recipeUnit = $sourceUnit;
 
-            if ($sourceUnit !== $referenceUnit) {
-                if (
-                    $convertedAmount === null
-                    || $convertedAmount <= 0
-                    || $convertedUnit !== $referenceUnit
-                ) {
-                    throw new \InvalidArgumentException(
-                        sprintf(
-                            'A conversion from %s to %s is required.',
-                            $sourceUnit,
-                            $referenceUnit
-                        )
-                    );
-                }
-
-                $recipeAmount = $convertedAmount;
-                $recipeUnit = $convertedUnit;
-            }
+            /*
+             * Resolves an explicit conversion, falls back to one
+             * remembered earlier for this product/unit pair, and (when
+             * requested) remembers a freshly entered one for next time -
+             * see UnitConverter for details.
+             */
+            $resolved = (new UnitConverter())->resolve(
+                $productId,
+                $referenceUnit,
+                $sourceAmount,
+                $sourceUnit,
+                $convertedAmount,
+                $convertedUnit,
+                $rememberConversion
+            );
+            $recipeAmount = $resolved['amount'];
+            $recipeUnit = $resolved['unit'];
 
             if (!in_array($recipeUnit, ['g', 'ml', 'serving'], true)) {
                 throw new \InvalidArgumentException(
@@ -262,7 +261,7 @@ final class RecipeSourceIngredientRepository
              SET rsi.is_ignored = :ignored
              WHERE rsi.id = :source_id
                AND rsi.recipe_id = :recipe_id
-               AND r.owner_user_id = :user_id'
+               AND (r.owner_user_id = :user_id OR r.owner_user_id IS NULL)'
         );
         $statement->execute([
             'ignored' => $ignored ? 1 : 0,

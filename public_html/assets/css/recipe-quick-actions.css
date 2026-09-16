@@ -1,0 +1,85 @@
+/* /public_html/assets/css/recipe-quick-actions.css */
+/*
+ * Styles for the recipe page's quick-add flow: the inline "create a new
+ * product" panel and the per-product saved-conversions manager, both of
+ * which let the add-ingredient form stay on the page instead of sending
+ * the user to /products.
+ */
+
+.inline-product-create {
+    padding: 16px;
+    border: 1px dashed var(--accent);
+    border-radius: 10px;
+    background: #eef6f0;
+}
+
+.inline-product-create-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.inline-product-create .form-grid {
+    gap: 14px;
+}
+
+.product-conversions-manager {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.product-conversions-heading {
+    margin: 0 0 10px;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.product-conversions-heading span {
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.conversions-list {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 12px;
+    padding: 0;
+    list-style: none;
+}
+
+.conversions-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+}
+
+.conversions-list li:last-child {
+    border-bottom: 0;
+}
+
+.conversions-empty {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.conversions-add-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.conversions-add-row input[type="number"] {
+    max-width: 110px;
+}
+
+.conversions-add-row select {
+    max-width: 100px;
+}

@@ -71,7 +71,8 @@ final class ProductRepository
                 fat_g = :fat_g, saturated_fat_g = :saturated_fat_g,
                 carbohydrates_g = :carbohydrates_g, sugars_g = :sugars_g,
                 fiber_g = :fiber_g, protein_g = :protein_g, salt_g = :salt_g
-             WHERE id = :id AND owner_user_id = :owner_user_id'
+             WHERE id = :id
+               AND (owner_user_id = :owner_user_id OR owner_user_id IS NULL)'
         );
 
         $parameters = $this->parameters($userId, $data);
@@ -88,7 +89,8 @@ final class ProductRepository
         $statement = Database::connection()->prepare(
             'UPDATE products
              SET image_path = :image_path, image_source_url = :image_source_url
-             WHERE id = :id AND owner_user_id = :owner_user_id'
+             WHERE id = :id
+               AND (owner_user_id = :owner_user_id OR owner_user_id IS NULL)'
         );
         $statement->execute([
             'id' => $productId,
@@ -102,7 +104,8 @@ final class ProductRepository
     {
         $statement = Database::connection()->prepare(
             'UPDATE products SET is_archived = :value
-             WHERE id = :id AND owner_user_id = :owner_user_id'
+             WHERE id = :id
+               AND (owner_user_id = :owner_user_id OR owner_user_id IS NULL)'
         );
         $statement->execute([
             'id' => $productId,
@@ -111,17 +114,21 @@ final class ProductRepository
         ]);
     }
 
-    public function findBySource(int $userId, string $sourceType, string $sourceIdentifier): ?array
+    /**
+     * AH-imported products are shared catalog entries (owner_user_id is
+     * NULL), so this lookup is intentionally global rather than scoped to
+     * one user: whoever imports a given AH product first, everyone else
+     * reuses that same row instead of creating a duplicate.
+     */
+    public function findBySource(string $sourceType, string $sourceIdentifier): ?array
     {
         $statement = Database::connection()->prepare(
             'SELECT * FROM products
-             WHERE owner_user_id = :user_id
-               AND source_type = :source_type
+             WHERE source_type = :source_type
                AND source_identifier = :source_identifier
              LIMIT 1'
         );
         $statement->execute([
-            'user_id' => $userId,
             'source_type' => $sourceType,
             'source_identifier' => $sourceIdentifier,
         ]);
@@ -129,16 +136,20 @@ final class ProductRepository
         return $statement->fetch() ?: null;
     }
 
-    public function upsertImported(int $userId, array $data): int
+    /**
+     * Imported products join the shared catalog: owner_user_id is left
+     * NULL so every user sees, reuses, and can refresh the same row
+     * instead of each importer getting a private copy.
+     */
+    public function upsertImported(array $data): int
     {
         $existing = $this->findBySource(
-            $userId,
             (string) $data['source_type'],
             (string) $data['source_identifier']
         );
 
         $values = [
-            'owner_user_id' => $userId,
+            'owner_user_id' => null,
             'name' => $data['name'],
             'brand' => $data['brand'] ?: null,
             'source_type' => $data['source_type'],
@@ -172,9 +183,9 @@ final class ProductRepository
                     carbohydrates_g = :carbohydrates_g, sugars_g = :sugars_g,
                     fiber_g = :fiber_g, protein_g = :protein_g, salt_g = :salt_g,
                     is_archived = 0, source_checked_at = CURRENT_TIMESTAMP
-                 WHERE id = :id AND owner_user_id = :owner_user_id'
+                 WHERE id = :id'
             );
-            unset($values['source_type'], $values['source_identifier']);
+            unset($values['source_type'], $values['source_identifier'], $values['owner_user_id']);
             $values['id'] = $existing['id'];
             $statement->execute($values);
 

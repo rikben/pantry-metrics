@@ -50,6 +50,7 @@ final class RecipeImportController
             'title' => 'Review AH recipe',
             'recipe' => $recipe,
             'previewToken' => $token,
+            'existing' => (new RecipeRepository())->findBySource($recipe->sourceIdentifier),
         ]);
     }
 
@@ -157,8 +158,13 @@ final class RecipeImportController
         $sourceIngredientRepository =
             new RecipeSourceIngredientRepository();
 
+        /*
+         * AH-imported recipes are shared catalog entries: this lookup is
+         * global, so re-importing a recipe someone else already imported
+         * reuses their row instead of creating a duplicate (and instead
+         * of colliding with the source_identifier unique key).
+         */
         $existingRecipe = $repository->findBySource(
-            (int) $user['id'],
             $imported->sourceIdentifier
         );
 
@@ -167,7 +173,6 @@ final class RecipeImportController
 
             $repository->updateImported(
                 $recipeId,
-                (int) $user['id'],
                 $recipeData
             );
 
@@ -183,10 +188,7 @@ final class RecipeImportController
                 );
             }
         } else {
-            $recipeId = $repository->create(
-                (int) $user['id'],
-                $recipeData
-            );
+            $recipeId = $repository->createShared($recipeData);
 
             $sourceIngredientRepository->createMany(
                 $recipeId,
