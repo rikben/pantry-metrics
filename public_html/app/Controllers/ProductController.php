@@ -83,9 +83,24 @@ final class ProductController
         $product = (new ProductRepository())->findForUser((int) $id, (int) $user['id']);
 
         if (!$product) {
+            if ($this->wantsJson()) {
+                $this->jsonOrExit(['error' => 'Product not found.'], 404);
+            }
+
             http_response_code(404);
             view('errors/404', ['title' => 'Product not found']);
             return;
+        }
+
+        $conversions = (new ProductUnitConversionRepository())->forProduct((int) $id);
+
+        /*
+         * The product edit modal (used from both /products and the recipe
+         * page) fetches the product + its conversions as JSON instead of
+         * loading the full edit page.
+         */
+        if ($this->wantsJson()) {
+            $this->json(['product' => $product + ['conversions' => $conversions]]);
         }
 
         view('products/form', [
@@ -93,7 +108,7 @@ final class ProductController
             'product' => $product,
             'action' => "/products/{$id}/update",
             'returnTo' => '',
-            'conversions' => (new ProductUnitConversionRepository())->forProduct((int) $id),
+            'conversions' => $conversions,
         ]);
     }
 
@@ -156,6 +171,14 @@ final class ProductController
                 (int) $user['id'],
                 (new RemoteImageService())->importFromPage($data['source_url'], 'products')
             );
+        }
+
+        /*
+         * The product edit modal saves without navigating away, so it
+         * asks for JSON back instead of the usual redirect.
+         */
+        if ($this->wantsJson()) {
+            $this->json(['product' => $repository->findForUser((int) $id, (int) $user['id'])]);
         }
 
         redirect('/products');

@@ -10,8 +10,8 @@ declare(strict_types=1);
     </div>
     <div class="actions">
         <?php if (!$archived): ?>
-            <a class="button" href="/products/import">Import from AH</a>
-            <a class="button button-secondary" href="/products/create">Add manually</a>
+            <button class="button" type="button" id="import-product-button">Import from AH</button>
+            <button class="button button-secondary" type="button" id="create-product-button">Add manually</button>
             <a class="button button-secondary" href="/products?archived=1">Archived</a>
         <?php else: ?>
             <a class="button button-secondary" href="/products">Active products</a>
@@ -52,7 +52,7 @@ declare(strict_types=1);
                     $product['source_identifier'],
             ]))));
             ?>
-            <tr data-search="<?= e($productSearchText) ?>">
+            <tr data-search="<?= e($productSearchText) ?>" data-product-id="<?= e($product['id']) ?>">
                 <td>
                     <?php if (!empty($product['image_path'])): ?>
                         <img
@@ -92,16 +92,17 @@ declare(strict_types=1);
                 <td>
                     <div class="icon-actions">
                         <?php if (!$archived): ?>
-                            <a
+                            <button
                                     class="icon-button"
-                                    href="/products/<?= e($product['id']) ?>/edit"
+                                    type="button"
+                                    data-action="edit-product"
                                     aria-label="Edit <?= e($product['name']) ?>"
                                     title="Edit product"
                             >
                                 <svg aria-hidden="true" viewBox="0 0 24 24">
                                     <path d="m15.23 5.21 3.56 3.56L8.06 19.5H4.5v-3.56L15.23 5.21Zm1.42-1.42 1.06-1.06a2 2 0 0 1 2.83 0l.73.73a2 2 0 0 1 0 2.83l-1.06 1.06-3.56-3.56Z"/>
                                 </svg>
-                            </a>
+                            </button>
                         <?php endif; ?>
 
                         <form method="post" action="/products/<?= e($product['id']) ?>/<?= $archived ? 'restore' : 'archive' ?>">

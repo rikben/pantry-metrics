@@ -17,10 +17,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const productFilterInput = document.querySelector('#product-filter');
     const productFilterCount = document.querySelector('#product-filter-count');
-    const productRows = Array.from(document.querySelectorAll('#products-table-body tr[data-search]'));
 
-    if (productFilterInput && productRows.length) {
+    if (productFilterInput) {
+        // Queried live (not cached) so rows inserted later by the "Add
+        // manually" / "Import from AH" modals (see products-page.js)
+        // are filterable immediately, without re-registering anything.
         const applyProductFilter = () => {
+            const productRows = Array.from(document.querySelectorAll('#products-table-body tr[data-search]'));
             const query = productFilterInput.value.trim().toLocaleLowerCase('nl-NL');
             let visibleCount = 0;
 
@@ -38,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         productFilterInput.addEventListener('input', applyProductFilter);
+        window.pantryApplyProductFilter = applyProductFilter;
     }
 
     const select = document.querySelector('#product-select');
@@ -350,6 +354,100 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     /*
+     * Recipe scaling. Purely a client-side display transform: each row's
+     * true, saved amount (and its derived kcal/protein, which are linear
+     * in amount) live in data-original-* attributes, and the visible
+     * values are recomputed from those by a factor. Nothing is persisted.
+     * Per-serving/per-100g nutrition figures are scale-invariant, so they
+     * are left untouched. Editing is disabled while a non-1x factor is
+     * active so a scaled value can't accidentally be saved over the real
+     * one; resetting (or scaling back to the true serving count) restores
+     * editing.
+     */
+    const scaleServingsInput = document.querySelector('#recipe-scale-servings');
+    const scaleHalfButton = document.querySelector('#recipe-scale-half');
+    const scaleDoubleButton = document.querySelector('#recipe-scale-double');
+    const scaleResetButton = document.querySelector('#recipe-scale-reset');
+    const scaleNote = document.querySelector('#recipe-scale-note');
+    const trueServings = Number(config.servings) || 0;
+
+    const currentScaleFactor = () => {
+        const target = Number(scaleServingsInput?.value);
+        if (!trueServings || !target || target <= 0) return 1;
+        return target / trueServings;
+    };
+
+    const applyScaleToRow = (row, factor) => {
+        const scaled = Math.abs(factor - 1) > 0.0001;
+
+        const amountInput = row.querySelector('.inline-amount');
+        const unitSelect = row.querySelector('.inline-unit');
+        const saveButton = row.querySelector('.ingredient-save');
+        const kcalCell = row.querySelector('[data-cell="kcal"]');
+        const proteinCell = row.querySelector('[data-cell="protein"]');
+
+        const originalAmount = Number(row.dataset.originalAmount);
+        const originalKcal = Number(row.dataset.originalKcal);
+        const originalProtein = Number(row.dataset.originalProtein);
+
+        if (amountInput && Number.isFinite(originalAmount)) {
+            amountInput.value = Number((originalAmount * factor).toFixed(3));
+            amountInput.disabled = scaled;
+        }
+        if (unitSelect) unitSelect.disabled = scaled;
+        if (saveButton) saveButton.disabled = scaled;
+
+        if (kcalCell && Number.isFinite(originalKcal)) {
+            kcalCell.textContent = formatNumber(originalKcal * factor);
+        }
+        if (proteinCell && Number.isFinite(originalProtein)) {
+            proteinCell.textContent = `${formatNumber(originalProtein * factor)} g`;
+        }
+
+        row.classList.toggle('row-scaled', scaled);
+    };
+
+    const applyScale = () => {
+        if (!tbody) return;
+
+        const factor = currentScaleFactor();
+        const scaled = Math.abs(factor - 1) > 0.0001;
+
+        tbody.querySelectorAll('tr[data-ingredient-id]').forEach((row) => {
+            applyScaleToRow(row, factor);
+        });
+
+        scaleNote?.classList.toggle('is-hidden', !scaled);
+        scaleResetButton?.classList.toggle('is-hidden', !scaled);
+    };
+
+    if (trueServings) {
+        scaleServingsInput?.addEventListener('input', applyScale);
+
+        scaleHalfButton?.addEventListener('click', () => {
+            const current = Number(scaleServingsInput.value) || trueServings;
+            scaleServingsInput.value = Number((current / 2).toFixed(2));
+            applyScale();
+        });
+
+        scaleDoubleButton?.addEventListener('click', () => {
+            const current = Number(scaleServingsInput.value) || trueServings;
+            scaleServingsInput.value = Number((current * 2).toFixed(2));
+            applyScale();
+        });
+
+        scaleResetButton?.addEventListener('click', () => {
+            scaleServingsInput.value = trueServings;
+            applyScale();
+        });
+
+        // Exposed so recipe-import-workflow.js can reapply the active
+        // scale after it rebuilds #ingredients-body on its own (linking a
+        // source ingredient renders a fresh, unscaled table).
+        window.pantryApplyRecipeScale = applyScale;
+    }
+
+    /*
      * Saved unit conversions for the currently selected product, managed
      * right here on the recipe page (add/remove) instead of forcing a
      * trip to that product's own edit page. Mirrors the "Culinary units"
@@ -474,27 +572,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     /*
-     * Inline "create a new product" panel, opened from the combobox's
-     * trailing "+ Create ..." row when a search finds nothing useful.
-     * Posts straight to /products and, on success, adds the new product
-     * as an option in the picker and selects it - no page navigation.
+     * Creating or importing a product from the recipe page, without
+     * leaving it: the combobox's trailing "+ Create ..." row, the
+     * "Create product" button and the "Import AH product" button all
+     * open the shared modals (product-form-modal.js /
+     * product-import-modal.js). On success the new/updated product is
+     * added to the picker and selected - no page navigation.
      */
-    const inlineCreatePanel = document.querySelector('#inline-product-create');
-    const inlineCreateMessage = document.querySelector('#inline-product-create-message');
-    const NEW_PRODUCT_FIELDS = [
-        'energy_kj', 'energy_kcal', 'fat_g', 'saturated_fat_g',
-        'carbohydrates_g', 'sugars_g', 'fiber_g', 'protein_g', 'salt_g',
-    ];
-
-    const showInlineCreateMessage = (text, type = 'error') => {
-        if (!inlineCreateMessage) return;
-        inlineCreateMessage.textContent = text;
-        inlineCreateMessage.className = `ajax-message ajax-message-${type}`;
-        inlineCreateMessage.classList.remove('is-hidden');
-    };
-
     const addProductOption = (product) => {
-        const option = document.createElement('option');
+        const existingOption = select.querySelector(`option[value="${product.id}"]`);
+        const option = existingOption || document.createElement('option');
         option.value = product.id;
         option.dataset.name = product.name;
         option.dataset.meta = [product.brand, product.package_description].filter(Boolean).join(' · ');
@@ -504,66 +591,35 @@ document.addEventListener('DOMContentLoaded', () => {
         option.dataset.packageAmount = product.package_amount || '';
         option.dataset.packageUnit = product.package_unit || '';
         option.textContent = product.brand ? `${product.name} · ${product.brand}` : product.name;
-        select.appendChild(option);
+        if (!existingOption) select.appendChild(option);
+    };
+
+    const selectSavedProduct = (product, verb) => {
+        if (!product) return;
+        addProductOption(product);
+        select.value = String(product.id);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        amount?.focus();
+        showMessage(`"${product.name}" ${verb} and selected.`);
     };
 
     select?.addEventListener('combobox:create-requested', (event) => {
-        if (!inlineCreatePanel) return;
-
-        inlineCreatePanel.classList.remove('is-hidden');
-        inlineCreateMessage?.classList.add('is-hidden');
-
-        const nameInput = document.querySelector('#new-product-name');
-        if (nameInput) {
-            nameInput.value = event.detail?.query || '';
-            nameInput.focus();
-        }
-    });
-
-    document.querySelector('#inline-product-create-cancel')?.addEventListener('click', () => {
-        inlineCreatePanel?.classList.add('is-hidden');
-    });
-
-    document.querySelector('#inline-product-create-save')?.addEventListener('click', async () => {
-        const nameInput = document.querySelector('#new-product-name');
-        const name = nameInput?.value.trim() || '';
-
-        if (!name) {
-            showInlineCreateMessage('Product name is required.');
-            nameInput?.focus();
-            return;
-        }
-
-        const formData = new FormData();
-        formData.set('_csrf', config.csrfToken);
-        formData.set('name', name);
-        formData.set('brand', document.querySelector('#new-product-brand')?.value.trim() || '');
-        formData.set('reference_amount', document.querySelector('#new-product-reference-amount')?.value || '100');
-        formData.set('reference_unit', document.querySelector('#new-product-reference-unit')?.value || 'g');
-        formData.set('package_amount', '0');
-        formData.set('package_unit', '');
-        formData.set('package_description', '');
-        formData.set('source_url', '');
-
-        NEW_PRODUCT_FIELDS.forEach((field) => {
-            const fieldInput = document.querySelector(`#new-product-${field.replace(/_/g, '-')}`);
-            formData.set(field, fieldInput?.value || '0');
+        window.PantryProductModal?.openCreate({
+            defaultName: event.detail?.query || '',
+            onSaved: (product) => selectSavedProduct(product, 'created'),
         });
+    });
 
-        try {
-            const payload = await request('/products', formData);
-            const product = payload.product;
+    document.querySelector('#create-product-button')?.addEventListener('click', () => {
+        window.PantryProductModal?.openCreate({
+            onSaved: (product) => selectSavedProduct(product, 'created'),
+        });
+    });
 
-            addProductOption(product);
-            select.value = String(product.id);
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-
-            inlineCreatePanel?.classList.add('is-hidden');
-            amount?.focus();
-            showMessage(`"${product.name}" created and selected.`);
-        } catch (error) {
-            showInlineCreateMessage(error.message);
-        }
+    document.querySelector('#import-product-button')?.addEventListener('click', () => {
+        window.PantryProductImportModal?.open({
+            onImported: (product) => selectSavedProduct(product, 'imported'),
+        });
     });
 
     const svgElement = (pathData) => {
@@ -580,6 +636,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const ingredientRow = (ingredient) => {
         const row = document.createElement('tr');
         row.dataset.ingredientId = ingredient.id;
+        row.dataset.originalAmount = ingredient.amount;
+        row.dataset.originalKcal = ingredient.calculated_energy_kcal;
+        row.dataset.originalProtein = ingredient.calculated_protein_g;
         row.classList.add('row-enter');
 
         const imageCell = document.createElement('td');
@@ -694,6 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
         nutritionState = payload.nutrition;
         syncNutritionModeAvailability();
         applyNutritionMode();
+        applyScale();
     };
 
     ingredientForm.addEventListener('submit', async (event) => {

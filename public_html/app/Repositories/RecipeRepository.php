@@ -317,6 +317,30 @@ final class RecipeRepository
         ]);
     }
 
+    /**
+     * Makes a recipe public (owner_user_id NULL, the same shared-catalog
+     * state AH imports already use - visible and editable by every
+     * signed-in user) or private again (owned by the acting user). Since
+     * a public row already has no single owner, any user who can see it
+     * can also toggle it back to private, taking ownership themselves -
+     * consistent with every other edit action on a shared recipe.
+     */
+    public function setPublic(int $recipeId, int $userId, bool $public): bool
+    {
+        $statement = Database::connection()->prepare(
+            'UPDATE recipes SET owner_user_id = :new_owner_user_id
+             WHERE id = :id
+               AND (owner_user_id = :acting_user_id OR owner_user_id IS NULL)'
+        );
+        $statement->execute([
+            'id' => $recipeId,
+            'acting_user_id' => $userId,
+            'new_owner_user_id' => $public ? null : $userId,
+        ]);
+
+        return $statement->rowCount() > 0;
+    }
+
     public function findForUser(int $recipeId, int $userId): ?array
     {
         $statement = Database::connection()->prepare(

@@ -81,7 +81,12 @@ unset($shoppingProduct);
     <div class="page-heading">
         <div>
             <p class="eyebrow">Recipe workspace</p>
-            <h1><?= e($recipe['name']) ?></h1>
+            <h1>
+                <?= e($recipe['name']) ?>
+                <?php if ($recipe['owner_user_id'] === null): ?>
+                    <span class="shared-badge">Public</span>
+                <?php endif; ?>
+            </h1>
             <p><?= e($recipe['servings']) ?> servings</p>
         </div>
         <div class="actions">
@@ -89,6 +94,15 @@ unset($shoppingProduct);
             <form method="post" action="/recipes/<?= e($recipe['id']) ?>/duplicate">
                 <?= csrf_field() ?>
                 <button class="button button-secondary" type="submit">Duplicate</button>
+            </form>
+            <form
+                    method="post"
+                    action="/recipes/<?= e($recipe['id']) ?>/<?= $recipe['owner_user_id'] === null ? 'make-private' : 'make-public' ?>"
+            >
+                <?= csrf_field() ?>
+                <button class="button button-secondary" type="submit">
+                    <?= $recipe['owner_user_id'] === null ? 'Make private' : 'Make public' ?>
+                </button>
             </form>
             <?php if ($recipe['source_url']): ?>
                 <a class="button button-secondary" href="<?= e($recipe['source_url']) ?>" rel="noreferrer" target="_blank">Open source</a>
@@ -168,7 +182,31 @@ unset($shoppingProduct);
 </p>
 
 <section>
-    <div class="section-heading"><h2>Ingredients</h2></div>
+    <div class="section-heading">
+        <h2>Ingredients</h2>
+        <div class="recipe-scale" id="recipe-scale">
+            <label for="recipe-scale-servings">Scale to</label>
+            <input
+                    type="number"
+                    id="recipe-scale-servings"
+                    min="0.1"
+                    step="0.5"
+                    inputmode="decimal"
+                    value="<?= e($recipe['servings']) ?>"
+                    aria-label="Scale recipe to this many servings"
+            >
+            <span>servings</span>
+            <div class="recipe-scale-buttons">
+                <button class="button button-secondary" type="button" id="recipe-scale-half" title="Halve the recipe">½×</button>
+                <button class="button button-secondary" type="button" id="recipe-scale-double" title="Double the recipe">2×</button>
+                <button class="link-button is-hidden" type="button" id="recipe-scale-reset">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <p class="recipe-scale-note is-hidden" id="recipe-scale-note">
+        Amounts below are scaled for display only — editing is disabled until you reset to the saved amounts.
+    </p>
 
     <div class="empty-state <?= $nutrition['ingredients'] === [] ? '' : 'is-hidden' ?>" id="ingredients-empty">
         Add a product below to start calculating.
@@ -189,7 +227,12 @@ unset($shoppingProduct);
             </thead>
             <tbody id="ingredients-body">
             <?php foreach ($nutrition['ingredients'] as $ingredient): ?>
-                <tr data-ingredient-id="<?= e($ingredient['id']) ?>">
+                <tr
+                        data-ingredient-id="<?= e($ingredient['id']) ?>"
+                        data-original-amount="<?= e($ingredient['amount']) ?>"
+                        data-original-kcal="<?= e($ingredient['calculated_energy_kcal']) ?>"
+                        data-original-protein="<?= e($ingredient['calculated_protein_g']) ?>"
+                >
                     <td>
                         <?php if ($ingredient['image_path']): ?>
                             <img class="ingredient-image" src="<?= e($ingredient['image_path']) ?>" alt="" loading="lazy">
@@ -392,65 +435,6 @@ require __DIR__ . '/_source_ingredients.php';
             </select>
         </label>
 
-        <div class="full-width inline-product-create is-hidden" id="inline-product-create">
-            <div class="inline-product-create-header">
-                <strong>Create a new product</strong>
-                <button class="link-button" type="button" id="inline-product-create-cancel">Cancel</button>
-            </div>
-
-            <div class="form-grid">
-                <label class="full-width">
-                    Product name
-                    <input type="text" id="new-product-name" maxlength="191">
-                </label>
-
-                <label>
-                    Brand
-                    <input type="text" id="new-product-brand" maxlength="191">
-                </label>
-
-                <label>
-                    Reference amount
-                    <input type="number" id="new-product-reference-amount" value="100" min="0.001" step="0.001">
-                </label>
-
-                <label>
-                    Reference unit
-                    <select id="new-product-reference-unit">
-                        <option value="g">g</option>
-                        <option value="ml">ml</option>
-                        <option value="serving">serving</option>
-                    </select>
-                </label>
-
-                <?php
-                $newProductFields = [
-                        'energy_kj' => 'Energy (kJ)',
-                        'energy_kcal' => 'Energy (kcal)',
-                        'fat_g' => 'Fat (g)',
-                        'saturated_fat_g' => 'Saturated fat (g)',
-                        'carbohydrates_g' => 'Carbohydrates (g)',
-                        'sugars_g' => 'Sugars (g)',
-                        'fiber_g' => 'Fiber (g)',
-                        'protein_g' => 'Protein (g)',
-                        'salt_g' => 'Salt (g)',
-                ];
-                ?>
-                <?php foreach ($newProductFields as $field => $label): ?>
-                    <label>
-                        <?= e($label) ?>
-                        <input type="number" id="new-product-<?= e(str_replace('_', '-', $field)) ?>" value="0" min="0" step="0.001">
-                    </label>
-                <?php endforeach; ?>
-
-                <p class="full-width ajax-message is-hidden" id="inline-product-create-message" role="status"></p>
-
-                <div class="full-width actions">
-                    <button class="button" type="button" id="inline-product-create-save">Create and use this product</button>
-                </div>
-            </div>
-        </div>
-
         <label>
             Amount
             <input type="number" id="ingredient-amount" name="amount" min="0.001" step="0.001" required>
@@ -525,8 +509,8 @@ require __DIR__ . '/_source_ingredients.php';
 
         <div class="full-width actions">
             <button class="button" type="submit">Add ingredient</button>
-            <a class="button button-secondary" href="/products/create?return_to=<?= rawurlencode('/recipes/' . $recipe['id']) ?>">Create product</a>
-            <a class="button button-secondary" href="/products/import?return_to=<?= rawurlencode('/recipes/' . $recipe['id']) ?>">Import AH product</a>
+            <button class="button button-secondary" type="button" id="create-product-button">Create product</button>
+            <button class="button button-secondary" type="button" id="import-product-button">Import AH product</button>
         </div>
     </form>
 </section>
@@ -534,6 +518,7 @@ require __DIR__ . '/_source_ingredients.php';
 <script type="application/json" id="recipe-page-config">
 <?= json_encode([
             'recipeId' => (int) $recipe['id'],
+            'servings' => (float) $recipe['servings'],
             'csrfToken' => \App\Core\Csrf::token(),
     'selectedSourceIngredientId' => ($selectedSourceIngredientId ?? 0),
     'selectedProductId' => ($selectedProductId ?? 0),

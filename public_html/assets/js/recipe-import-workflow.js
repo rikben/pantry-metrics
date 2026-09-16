@@ -120,6 +120,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const ingredientRow = (ingredient) => {
         const row = document.createElement('tr');
         row.dataset.ingredientId = ingredient.id;
+        row.dataset.originalAmount = ingredient.amount;
+        row.dataset.originalKcal = ingredient.calculated_energy_kcal;
+        row.dataset.originalProtein = ingredient.calculated_protein_g;
         row.className = 'row-enter';
 
         const imageCell = document.createElement('td');
@@ -246,6 +249,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasIngredients = nutrition.ingredients.length > 0;
         table?.classList.toggle('is-hidden', !hasIngredients);
         empty?.classList.toggle('is-hidden', hasIngredients);
+
+        // Reapply any active recipe scale (see app.js) — this table was
+        // just rebuilt from the server's true, unscaled amounts.
+        window.pantryApplyRecipeScale?.();
 
         const values = {
             energy_kcal: formatNumber(

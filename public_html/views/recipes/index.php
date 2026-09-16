@@ -54,7 +54,7 @@ declare(strict_types=1);
                             · <?= e(implode(', ', array_column($recipeCategories[(int) $recipe['id']], 'name'))) ?>
                         <?php endif; ?>
                         <?php if ($recipe['owner_user_id'] === null): ?>
-                            <span class="shared-badge">Shared</span>
+                            <span class="shared-badge">Public</span>
                         <?php endif; ?>
                     </span>
                 </a>
@@ -65,6 +65,15 @@ declare(strict_types=1);
                     <form method="post" action="/recipes/<?= e($recipe['id']) ?>/duplicate">
                         <?= csrf_field() ?>
                         <button class="link-button" type="submit">Duplicate</button>
+                    </form>
+                    <form
+                            method="post"
+                            action="/recipes/<?= e($recipe['id']) ?>/<?= $recipe['owner_user_id'] === null ? 'make-private' : 'make-public' ?>"
+                    >
+                        <?= csrf_field() ?>
+                        <button class="link-button" type="submit">
+                            <?= $recipe['owner_user_id'] === null ? 'Make private' : 'Make public' ?>
+                        </button>
                     </form>
                     <form method="post" action="/recipes/<?= e($recipe['id']) ?>/<?= $archived ? 'restore' : 'archive' ?>">
                         <?= csrf_field() ?>

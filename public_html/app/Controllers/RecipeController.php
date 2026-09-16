@@ -133,6 +133,20 @@ final class RecipeController
         redirect("/recipes/{$newId}/edit");
     }
 
+    public function makePublic(string $id): void
+    {
+        $user = $this->user();
+        (new RecipeRepository())->setPublic((int) $id, (int) $user['id'], true);
+        redirect("/recipes/{$id}");
+    }
+
+    public function makePrivate(string $id): void
+    {
+        $user = $this->user();
+        (new RecipeRepository())->setPublic((int) $id, (int) $user['id'], false);
+        redirect("/recipes/{$id}");
+    }
+
     public function archive(string $id): void
     {
         $user = $this->user();

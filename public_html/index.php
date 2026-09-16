@@ -60,6 +60,8 @@ $router->get('/recipes/{id}', [RecipeController::class, 'show']);
 $router->get('/recipes/{id}/edit', [RecipeController::class, 'edit']);
 $router->post('/recipes/{id}/update', [RecipeController::class, 'update']);
 $router->post('/recipes/{id}/duplicate', [RecipeController::class, 'duplicate']);
+$router->post('/recipes/{id}/make-public', [RecipeController::class, 'makePublic']);
+$router->post('/recipes/{id}/make-private', [RecipeController::class, 'makePrivate']);
 $router->post('/recipes/{id}/archive', [RecipeController::class, 'archive']);
 $router->post('/recipes/{id}/restore', [RecipeController::class, 'restore']);
 

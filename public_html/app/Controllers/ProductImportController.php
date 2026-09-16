@@ -32,18 +32,21 @@ final class ProductImportController
         $url = trim((string) ($_POST['url'] ?? ''));
         $returnTo = $this->safeReturnTo((string) ($_POST['return_to'] ?? ''));
         $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
-        $sourceIngredientId = max((int) ($_POST['source_ingredient'] ?? 0), 0);
 
         try {
             $product = (new AhProductImporter())->import($url);
         } catch (ImportException $exception) {
+            if ($this->wantsJson()) {
+                $this->jsonOrExit(['error' => $exception->getMessage()], 422);
+            }
+
             http_response_code(422);
             view('products/import/create', [
                 'title' => 'Import AH product',
                 'error' => $exception->getMessage(),
                 'url' => $url,
                 'returnTo' => $returnTo,
-                'sourceIngredientId' => $sourceIngredientId ?? 0,
+                'sourceIngredientId' => $sourceIngredientId,
             ]);
             return;
         }
@@ -53,17 +56,30 @@ final class ProductImportController
             'created_at' => time(),
             'product' => $product->toArray(),
             'return_to' => $returnTo,
-            'source_ingredient' => $sourceIngredientId ?? 0,
+            'source_ingredient' => $sourceIngredientId,
         ];
+
+        $existing = (new ProductRepository())->findBySource('ah', $product->sourceIdentifier);
+
+        /*
+         * The AH import modal (recipe page and /products) previews and
+         * confirms the import without navigating away, so it asks for
+         * JSON back at each step instead of the usual server-rendered
+         * review page.
+         */
+        if ($this->wantsJson()) {
+            $this->json([
+                'product' => $product->toArray(),
+                'preview_token' => $token,
+                'existing' => $existing !== null,
+            ]);
+        }
 
         view('products/import/preview', [
             'title' => 'Review AH product',
             'product' => $product,
             'previewToken' => $token,
-            'existing' => (new ProductRepository())->findBySource(
-                'ah',
-                $product->sourceIdentifier
-            ),
+            'existing' => $existing,
         ]);
     }
 
@@ -74,8 +90,7 @@ final class ProductImportController
         unset($_SESSION['product_import_previews'][$token]);
 
         if (!is_array($preview) || (int) ($preview['created_at'] ?? 0) < time() - 1800) {
-            http_response_code(422);
-            exit('The import preview has expired.');
+            $this->jsonOrExit(['error' => 'The import preview has expired.'], 422);
         }
 
         $sourceIngredientId = (int) ($preview['source_ingredient'] ?? 0);
@@ -107,6 +122,10 @@ final class ProductImportController
             (new RemoteImageService())->importFromPage($data['source_url'], 'products')
         );
 
+        if ($this->wantsJson()) {
+            $this->json(['product' => $repository->findForUser($productId, (int) $user['id'])]);
+        }
+
         $returnTo = $this->safeReturnTo((string) ($preview['return_to'] ?? ''));
         redirect($returnTo !== ''
             ? $returnTo . '?selected_product=' . $productId
@@ -121,5 +140,31 @@ final class ProductImportController
     private function safeReturnTo(string $path): string
     {
         return preg_match('#^/recipes/\d+$#', $path) === 1 ? $path : '';
+    }
+
+    private function wantsJson(): bool
+    {
+        return str_contains(
+            strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? '')),
+            'application/json'
+        ) || strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+    }
+
+    private function json(array $payload, int $status = 200): never
+    {
+        http_response_code($status);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload, JSON_THROW_ON_ERROR);
+        exit;
+    }
+
+    private function jsonOrExit(array $payload, int $status): never
+    {
+        if ($this->wantsJson()) {
+            $this->json($payload, $status);
+        }
+
+        http_response_code($status);
+        exit((string) ($payload['error'] ?? 'Request failed.'));
     }
 }
