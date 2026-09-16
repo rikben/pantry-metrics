@@ -12,6 +12,7 @@ use App\Repositories\ProductRepository;
 use App\Repositories\ProductUnitConversionRepository;
 use App\Repositories\RecipeRepository;
 use App\Repositories\RecipeSourceIngredientRepository;
+use App\Services\IngredientMatcher;
 use App\Services\NutritionCalculator;
 use App\Services\RemoteImageService;
 use App\Services\UnitConverter;
@@ -112,6 +113,26 @@ final class RecipeController
         redirect("/recipes/{$id}");
     }
 
+    public function duplicate(string $id): void
+    {
+        $user = $this->user();
+        $repository = new RecipeRepository();
+        $newId = $repository->duplicate((int) $id, (int) $user['id']);
+
+        if ($newId === null) {
+            $this->notFound();
+            return;
+        }
+
+        $categoryRepository = new CategoryRepository();
+        $categoryRepository->sync(
+            $newId,
+            $categoryRepository->idsForRecipe((int) $id)
+        );
+
+        redirect("/recipes/{$newId}/edit");
+    }
+
     public function archive(string $id): void
     {
         $user = $this->user();
@@ -141,6 +162,12 @@ final class RecipeController
         $products = (new ProductRepository())->allForUser((int) $user['id']);
         $categoryRepository = new CategoryRepository();
 
+        $sourceIngredients = (new RecipeSourceIngredientRepository())->allForRecipe(
+            (int) $id,
+            (int) $user['id']
+        );
+        $sourceIngredients = $this->withSuggestedMatches($sourceIngredients, $products);
+
         view('recipes/show', [
             'title' => $recipe['name'],
             'recipe' => $recipe,
@@ -151,17 +178,51 @@ final class RecipeController
             ),
             'categories' => $categoryRepository->all(),
             'recipeCategoryIds' => $categoryRepository->idsForRecipe((int) $id),
-            'sourceIngredients' => (
-                new RecipeSourceIngredientRepository()
-            )->allForRecipe(
-                (int) $id,
-                (int) $user['id']
-            ),
+            'sourceIngredients' => $sourceIngredients,
             'selectedProductId' => (int) ($_GET['selected_product'] ?? 0),
             'selectedSourceIngredientId' => (int) (
                 $_GET['source_ingredient'] ?? 0
             ),
         ]);
+    }
+
+    /**
+     * Pre-fills a best-guess product match for source ingredients that
+     * aren't linked or ignored yet, so most of an AH import's checklist
+     * arrives with a sensible default already selected in the picker.
+     * Nothing is saved here - the suggestion only changes which option
+     * the <select> starts on; the user still reviews and clicks "Link
+     * product" (or picks something else) before anything is written.
+     *
+     * @param array<int, array<string, mixed>> $sourceIngredients
+     * @param array<int, array<string, mixed>> $products
+     * @return array<int, array<string, mixed>>
+     */
+    private function withSuggestedMatches(array $sourceIngredients, array $products): array
+    {
+        if ($products === []) {
+            return $sourceIngredients;
+        }
+
+        $matcher = new IngredientMatcher();
+
+        foreach ($sourceIngredients as &$sourceIngredient) {
+            $sourceIngredient['suggested_product_id'] = null;
+
+            if ($sourceIngredient['linked_product_id'] || $sourceIngredient['is_ignored']) {
+                continue;
+            }
+
+            $needle = (string) ($sourceIngredient['parsed_name'] ?: $sourceIngredient['raw_text']);
+            $match = $matcher->suggest($needle, $products);
+
+            if ($match !== null) {
+                $sourceIngredient['suggested_product_id'] = $match['product_id'];
+            }
+        }
+        unset($sourceIngredient);
+
+        return $sourceIngredients;
     }
 
     public function addIngredient(string $id): void

@@ -62,6 +62,10 @@ declare(strict_types=1);
                     <?php if (!$archived): ?>
                         <a href="/recipes/<?= e($recipe['id']) ?>/edit">Edit</a>
                     <?php endif; ?>
+                    <form method="post" action="/recipes/<?= e($recipe['id']) ?>/duplicate">
+                        <?= csrf_field() ?>
+                        <button class="link-button" type="submit">Duplicate</button>
+                    </form>
                     <form method="post" action="/recipes/<?= e($recipe['id']) ?>/<?= $archived ? 'restore' : 'archive' ?>">
                         <?= csrf_field() ?>
                         <button class="link-button" type="submit"><?= $archived ? 'Restore' : 'Archive' ?></button>

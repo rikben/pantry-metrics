@@ -115,6 +115,74 @@ final class RecipeRepository
         return (int) Database::connection()->lastInsertId();
     }
 
+    /**
+     * Creates a private copy of a recipe - including its ingredients -
+     * owned by the given user, e.g. to tweak a shared recipe without
+     * changing it for everyone else. The copy never carries over the AH
+     * source identifier, so it behaves like any other manually created
+     * recipe; re-importing the original AH recipe later still targets
+     * the original shared row, not this copy.
+     */
+    public function duplicate(int $recipeId, int $userId): ?int
+    {
+        $source = $this->findForUser($recipeId, $userId);
+
+        if (!$source) {
+            return null;
+        }
+
+        $connection = Database::connection();
+        $connection->beginTransaction();
+
+        try {
+            $statement = $connection->prepare(
+                'INSERT INTO recipes (
+                    owner_user_id, name, description, instructions,
+                    source_url, image_path, image_source_url, servings
+                 ) VALUES (
+                    :owner_user_id, :name, :description, :instructions,
+                    :source_url, :image_path, :image_source_url, :servings
+                 )'
+            );
+            $statement->execute([
+                'owner_user_id' => $userId,
+                'name' => $source['name'] . ' (copy)',
+                'description' => $source['description'],
+                'instructions' => $source['instructions'],
+                'source_url' => $source['source_url'],
+                'image_path' => $source['image_path'],
+                'image_source_url' => $source['image_source_url'],
+                'servings' => $source['servings'],
+            ]);
+
+            $newRecipeId = (int) $connection->lastInsertId();
+
+            $copyIngredients = $connection->prepare(
+                'INSERT INTO recipe_ingredients (
+                    recipe_id, product_id, position, original_description, amount, unit, notes
+                 )
+                 SELECT :new_recipe_id, product_id, position, original_description, amount, unit, notes
+                 FROM recipe_ingredients
+                 WHERE recipe_id = :source_recipe_id
+                 ORDER BY position, id'
+            );
+            $copyIngredients->execute([
+                'new_recipe_id' => $newRecipeId,
+                'source_recipe_id' => $recipeId,
+            ]);
+
+            $connection->commit();
+
+            return $newRecipeId;
+        } catch (\Throwable $exception) {
+            if ($connection->inTransaction()) {
+                $connection->rollBack();
+            }
+
+            throw $exception;
+        }
+    }
+
     public function update(
         int $recipeId,
         int $userId,

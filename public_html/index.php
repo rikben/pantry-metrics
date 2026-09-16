@@ -59,6 +59,7 @@ $router->post('/recipes/import/store', [RecipeImportController::class, 'store'])
 $router->get('/recipes/{id}', [RecipeController::class, 'show']);
 $router->get('/recipes/{id}/edit', [RecipeController::class, 'edit']);
 $router->post('/recipes/{id}/update', [RecipeController::class, 'update']);
+$router->post('/recipes/{id}/duplicate', [RecipeController::class, 'duplicate']);
 $router->post('/recipes/{id}/archive', [RecipeController::class, 'archive']);
 $router->post('/recipes/{id}/restore', [RecipeController::class, 'restore']);
 

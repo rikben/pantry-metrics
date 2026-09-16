@@ -18,6 +18,11 @@ declare(strict_types=1);
         <div class="source-ingredients-accordion-content">
             <div class="source-ingredient-list" id="source-ingredient-list">
                 <?php foreach ($sourceIngredients as $sourceIngredient): ?>
+                    <?php
+                    $hasSuggestion = !$sourceIngredient['linked_product_id']
+                            && !$sourceIngredient['is_ignored']
+                            && !empty($sourceIngredient['suggested_product_id']);
+                    ?>
                     <article
                             class="card source-ingredient-card
                         <?= $sourceIngredient['linked_product_id']
@@ -25,7 +30,8 @@ declare(strict_types=1);
                                     : '' ?>
                         <?= $sourceIngredient['is_ignored']
                                     ? 'source-ingredient-ignored'
-                                    : '' ?>"
+                                    : '' ?>
+                        <?= $hasSuggestion ? 'source-ingredient-suggested' : '' ?>"
                             data-source-ingredient-id="<?= e($sourceIngredient['id']) ?>"
                     >
                         <header class="source-concept">
@@ -42,7 +48,11 @@ declare(strict_types=1);
                                     : (
                                     $sourceIngredient['is_ignored']
                                             ? 'Ignored'
-                                            : 'Needs linking'
+                                            : (
+                                            $hasSuggestion
+                                                    ? 'Suggested match — verify'
+                                                    : 'Needs linking'
+                                            )
                                     ) ?>
                         </span>
                         </header>
@@ -98,10 +108,14 @@ declare(strict_types=1);
                                                 data-name="<?= e($product['name']) ?>"
                                                 data-meta="<?= e($metaText) ?>"
                                                 data-image="<?= e($product['image_path'] ?? '') ?>"
-                                                <?= (int) $sourceIngredient['linked_product_id']
-                                                === (int) $product['id']
-                                                        ? 'selected'
-                                                        : '' ?>
+                                                <?php
+                                                $isConfirmedLink = (int) $sourceIngredient['linked_product_id']
+                                                        === (int) $product['id'];
+                                                $isSuggestedMatch = $hasSuggestion
+                                                        && (int) $sourceIngredient['suggested_product_id']
+                                                            === (int) $product['id'];
+                                                ?>
+                                                <?= ($isConfirmedLink || $isSuggestedMatch) ? 'selected' : '' ?>
                                         >
                                             <?= e($product['name']) ?>
                                             <?= $product['brand']

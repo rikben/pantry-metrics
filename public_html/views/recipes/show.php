@@ -86,6 +86,10 @@ unset($shoppingProduct);
         </div>
         <div class="actions">
             <a class="button button-secondary" href="/recipes/<?= e($recipe['id']) ?>/edit">Edit recipe</a>
+            <form method="post" action="/recipes/<?= e($recipe['id']) ?>/duplicate">
+                <?= csrf_field() ?>
+                <button class="button button-secondary" type="submit">Duplicate</button>
+            </form>
             <?php if ($recipe['source_url']): ?>
                 <a class="button button-secondary" href="<?= e($recipe['source_url']) ?>" rel="noreferrer" target="_blank">Open source</a>
             <?php endif; ?>
